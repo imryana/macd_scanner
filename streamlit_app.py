@@ -60,13 +60,6 @@ macd_signal = st.sidebar.number_input("Signal Line", min_value=5, max_value=20, 
 ema_period = st.sidebar.number_input("EMA Period", min_value=50, max_value=300, value=200)
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Scan Options")
-
-# Stock selection
-scan_option = st.sidebar.radio(
-    "Select stocks to scan:",
-    ["Quick Test (10 stocks)", "Tech Sector", "Financial Sector", "Energy Sector", "Full S&P 500"]
-)
 
 # Display active indicators
 st.sidebar.markdown("---")
@@ -97,25 +90,9 @@ with col1:
                 use_ema200=use_ema200
             )
         
-        # Determine which stocks to scan
-        if scan_option == "Quick Test (10 stocks)":
-            tickers = ['AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'JPM', 'V', 'WMT']
-            st.info(f"Scanning {len(tickers)} stocks for testing...")
-        elif scan_option == "Tech Sector":
-            tickers = ['AAPL', 'MSFT', 'GOOGL', 'META', 'AMZN', 'NVDA', 'AMD', 'INTC', 'CSCO', 
-                      'ORCL', 'CRM', 'ADBE', 'NFLX', 'AVGO', 'TXN', 'QCOM']
-            st.info(f"Scanning {len(tickers)} tech stocks...")
-        elif scan_option == "Financial Sector":
-            tickers = ['JPM', 'BAC', 'WFC', 'C', 'GS', 'MS', 'BLK', 'SCHW', 'AXP', 'USB', 
-                      'PNC', 'TFC', 'COF', 'BK', 'STT']
-            st.info(f"Scanning {len(tickers)} financial stocks...")
-        elif scan_option == "Energy Sector":
-            tickers = ['XOM', 'CVX', 'COP', 'SLB', 'EOG', 'PXD', 'MPC', 'PSX', 'VLO', 'OXY',
-                      'HAL', 'DVN', 'HES', 'FANG', 'BKR']
-            st.info(f"Scanning {len(tickers)} energy stocks...")
-        else:
-            tickers = None
-            st.warning("Scanning all S&P 500 stocks - This may take 5-10 minutes...")
+        # Scan all S&P 500 stocks
+        tickers = None
+        st.warning("🔍 Scanning all S&P 500 stocks - This may take 5-10 minutes...")
         
         # Progress bar
         progress_bar = st.progress(0)
