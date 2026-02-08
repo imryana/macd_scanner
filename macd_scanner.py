@@ -209,26 +209,20 @@ class MACDScanner:
             
             # Calculate trading levels (Entry, Stop Loss, Take Profit)
             entry_price = latest['Close']
-            risk_reward_ratio = 2.0  # 2:1 reward to risk
+            risk_reward_ratio = 1.5  # 1.5:1 reward to risk
             
             if 'LONG' in signal:
                 # For LONG positions
-                # Stop loss: Use EMA-200 if available, otherwise 5% below entry
-                if self.use_ema200 and 'EMA_200' in data.columns:
-                    stop_loss = min(latest['EMA_200'], entry_price * 0.95)  # Use lower of EMA-200 or 5% below
-                else:
-                    stop_loss = entry_price * 0.95  # 5% below entry
+                # Stop loss: 5% below entry
+                stop_loss = entry_price * 0.95  # 5% below entry
                 
                 risk_per_share = entry_price - stop_loss
                 take_profit = entry_price + (risk_per_share * risk_reward_ratio)
                 
             else:  # SHORT positions
                 # For SHORT positions
-                # Stop loss: Use EMA-200 if available, otherwise 5% above entry
-                if self.use_ema200 and 'EMA_200' in data.columns:
-                    stop_loss = max(latest['EMA_200'], entry_price * 1.05)  # Use higher of EMA-200 or 5% above
-                else:
-                    stop_loss = entry_price * 1.05  # 5% above entry
+                # Stop loss: 5% above entry
+                stop_loss = entry_price * 1.05  # 5% above entry
                 
                 risk_per_share = stop_loss - entry_price
                 take_profit = entry_price - (risk_per_share * risk_reward_ratio)

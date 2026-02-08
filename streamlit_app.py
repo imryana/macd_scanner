@@ -124,8 +124,8 @@ with col2:
     
     **Trading Levels:**
     - 💰 **Entry**: Current market price
-    - 🛡️ **Stop Loss**: Based on EMA-200 or 5% from entry
-    - 🎯 **Take Profit**: 2:1 risk/reward ratio
+    - 🛡️ **Stop Loss**: 5% from entry
+    - 🎯 **Take Profit**: 1.5:1 risk/reward ratio (7.5% target)
     
     **Filters:**
     - Fresh signals (0-7 days since crossover)
