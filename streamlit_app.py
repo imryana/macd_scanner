@@ -130,19 +130,65 @@ with col2:
 
 # Display results if they exist
 if 'results' in st.session_state and len(st.session_state['results']) > 0:
-    results = st.session_state['results']
+    results = st.session_state['results'].copy()
+    
+    # Clean up column names - remove underscores and capitalize
+    column_rename = {
+        'ticker': 'Ticker',
+        'signal': 'Signal',
+        'days_since_crossover': 'Days Since Crossover',
+        'crossover_position': 'Crossover Position',
+        'current_price': 'Current Price',
+        'macd': 'MACD',
+        'signal_line': 'Signal Line',
+        'histogram': 'Histogram',
+        'rsi': 'RSI',
+        'adx': 'ADX',
+        'bb_position': 'BB Position',
+        'ema_200': 'EMA 200',
+        'price_vs_ema200': 'Price vs EMA200',
+        'distance_from_ema200_pct': 'Distance from EMA200 %',
+        'volume_ratio': 'Volume Ratio',
+        'price_change_5d_pct': 'Price Change 5D %',
+        'crossover_date': 'Crossover Date',
+        'current_date': 'Current Date'
+    }
+    results = results.rename(columns=column_rename)
     
     st.markdown("---")
     st.subheader("📊 Scan Results")
     st.caption(f"Last scan: {st.session_state.get('scan_time', 'N/A')}")
     
+    # Sorting options
+    col_sort1, col_sort2 = st.columns([2, 1])
+    with col_sort1:
+        sort_by = st.selectbox(
+            "Sort by:",
+            ["Signal Strength", "Days Since Crossover", "Current Price", "Volume Ratio", 
+             "ADX", "RSI", "Price Change 5D %"],
+            key="sort_by"
+        )
+    with col_sort2:
+        sort_order = st.radio("Order:", ["Ascending", "Descending"], horizontal=True, key="sort_order")
+    
+    # Apply sorting
+    if sort_by == "Signal Strength":
+        # Sort by signal strength (STRONG LONG > LONG > SHORT > STRONG SHORT)
+        signal_priority = {'STRONG LONG': 1, 'LONG': 2, 'SHORT': 3, 'STRONG SHORT': 4}
+        results['_sort_priority'] = results['Signal'].map(signal_priority)
+        results = results.sort_values('_sort_priority', ascending=(sort_order == "Ascending"))
+        results = results.drop('_sort_priority', axis=1)
+    else:
+        sort_column = sort_by
+        results = results.sort_values(sort_column, ascending=(sort_order == "Ascending"))
+    
     # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
     
-    long_signals = results[results['signal'].str.contains('LONG')]
-    short_signals = results[results['signal'].str.contains('SHORT')]
-    strong_long = results[results['signal'] == 'STRONG LONG']
-    strong_short = results[results['signal'] == 'STRONG SHORT']
+    long_signals = results[results['Signal'].str.contains('LONG')]
+    short_signals = results[results['Signal'].str.contains('SHORT')]
+    strong_long = results[results['Signal'] == 'STRONG LONG']
+    strong_short = results[results['Signal'] == 'STRONG SHORT']
     
     with col1:
         st.metric("Total Signals", len(results))
@@ -186,8 +232,8 @@ if 'results' in st.session_state and len(st.session_state['results']) > 0:
             
             filtered_long = long_signals
             if show_strong_only:
-                filtered_long = filtered_long[filtered_long['signal'] == 'STRONG LONG']
-            filtered_long = filtered_long[filtered_long['volume_ratio'] >= min_volume]
+                filtered_long = filtered_long[filtered_long['Signal'] == 'STRONG LONG']
+            filtered_long = filtered_long[filtered_long['Volume Ratio'] >= min_volume]
             
             st.dataframe(filtered_long, use_container_width=True, hide_index=True)
         else:
@@ -206,8 +252,8 @@ if 'results' in st.session_state and len(st.session_state['results']) > 0:
             
             filtered_short = short_signals
             if show_strong_only:
-                filtered_short = filtered_short[filtered_short['signal'] == 'STRONG SHORT']
-            filtered_short = filtered_short[filtered_short['volume_ratio'] >= min_volume]
+                filtered_short = filtered_short[filtered_short['Signal'] == 'STRONG SHORT']
+            filtered_short = filtered_short[filtered_short['Volume Ratio'] >= min_volume]
             
             st.dataframe(filtered_short, use_container_width=True, hide_index=True)
         else:
@@ -220,32 +266,32 @@ if 'results' in st.session_state and len(st.session_state['results']) > 0:
         
         with col1:
             st.markdown("#### Signal Distribution")
-            signal_counts = results['signal'].value_counts()
+            signal_counts = results['Signal'].value_counts()
             st.bar_chart(signal_counts)
         
         with col2:
             st.markdown("#### Statistics")
-            st.write(f"**Average Days Since Crossover:** {results['days_since_crossover'].mean():.2f}")
-            st.write(f"**Average Volume Ratio:** {results['volume_ratio'].mean():.2f}")
-            st.write(f"**Average 5-Day Price Change:** {results['price_change_5d_pct'].mean():.2f}%")
+            st.write(f"**Average Days Since Crossover:** {results['Days Since Crossover'].mean():.2f}")
+            st.write(f"**Average Volume Ratio:** {results['Volume Ratio'].mean():.2f}")
+            st.write(f"**Average 5-Day Price Change:** {results['Price Change 5D %'].mean():.2f}%")
             
-            if use_rsi:
-                st.write(f"**Average RSI:** {results['rsi'].mean():.2f}")
-            if use_adx:
-                st.write(f"**Average ADX:** {results['adx'].mean():.2f}")
+            if 'RSI' in results.columns:
+                st.write(f"**Average RSI:** {results['RSI'].mean():.2f}")
+            if 'ADX' in results.columns:
+                st.write(f"**Average ADX:** {results['ADX'].mean():.2f}")
         
         # Crossover position analysis
-        if 'crossover_position' in results.columns:
+        if 'Crossover Position' in results.columns:
             st.markdown("#### Crossover Position")
-            crossover_counts = results['crossover_position'].value_counts()
+            crossover_counts = results['Crossover Position'].value_counts()
             st.bar_chart(crossover_counts)
         
         # Very fresh signals
-        very_fresh = results[results['days_since_crossover'] <= 1]
+        very_fresh = results[results['Days Since Crossover'] <= 1]
         if len(very_fresh) > 0:
             st.markdown(f"#### 🆕 Very Fresh Signals (0-1 days): {len(very_fresh)}")
             st.dataframe(
-                very_fresh[['ticker', 'signal', 'days_since_crossover', 'current_price']],
+                very_fresh[['Ticker', 'Signal', 'Days Since Crossover', 'Current Price']],
                 use_container_width=True,
                 hide_index=True
             )
