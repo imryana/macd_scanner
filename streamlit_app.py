@@ -122,6 +122,11 @@ with col2:
     - 🔴 **STRONG SHORT**: High probability bearish setup
     - 🟠 **SHORT**: Bearish setup with confirmations
     
+    **Trading Levels:**
+    - 💰 **Entry**: Current market price
+    - 🛡️ **Stop Loss**: Based on EMA-200 or 5% from entry
+    - 🎯 **Take Profit**: 2:1 risk/reward ratio
+    
     **Filters:**
     - Fresh signals (0-7 days since crossover)
     - Multiple indicator confirmations
@@ -139,6 +144,10 @@ if 'results' in st.session_state and len(st.session_state['results']) > 0:
         'days_since_crossover': 'Days Since Crossover',
         'crossover_position': 'Crossover Position',
         'current_price': 'Current Price',
+        'entry_price': 'Entry Price',
+        'stop_loss': 'Stop Loss',
+        'take_profit': 'Take Profit',
+        'risk_reward_ratio': 'Risk:Reward',
         'macd': 'MACD',
         'signal_line': 'Signal Line',
         'histogram': 'Histogram',
@@ -164,8 +173,8 @@ if 'results' in st.session_state and len(st.session_state['results']) > 0:
     with col_sort1:
         sort_by = st.selectbox(
             "Sort by:",
-            ["Signal Strength", "Days Since Crossover", "Current Price", "Volume Ratio", 
-             "ADX", "RSI", "Price Change 5D %"],
+            ["Signal Strength", "Days Since Crossover", "Current Price", "Take Profit", 
+             "Stop Loss", "Volume Ratio", "ADX", "RSI", "Price Change 5D %"],
             key="sort_by"
         )
     with col_sort2:
@@ -291,7 +300,7 @@ if 'results' in st.session_state and len(st.session_state['results']) > 0:
         if len(very_fresh) > 0:
             st.markdown(f"#### 🆕 Very Fresh Signals (0-1 days): {len(very_fresh)}")
             st.dataframe(
-                very_fresh[['Ticker', 'Signal', 'Days Since Crossover', 'Current Price']],
+                very_fresh[['Ticker', 'Signal', 'Days Since Crossover', 'Entry Price', 'Stop Loss', 'Take Profit']],
                 use_container_width=True,
                 hide_index=True
             )
@@ -305,6 +314,8 @@ else:
         After scanning, you'll see:
         - **Summary metrics** with total signals found
         - **Interactive tables** with all signal details
+        - **Trading levels** - Entry price, Stop loss, and Take profit (2:1 ratio)
+        - **Sorting options** - Sort by signal strength, freshness, price, etc.
         - **Filtering options** by signal type and volume
         - **Analytics** showing signal distribution and statistics
         - **Download button** to export results as CSV
@@ -312,6 +323,7 @@ else:
         Each signal includes:
         - Ticker symbol and current price
         - Signal type (STRONG LONG, LONG, SHORT, STRONG SHORT)
+        - **Suggested entry, stop loss, and take profit levels**
         - Days since crossover (fresher = better)
         - Crossover position (above/below zero line)
         - All indicator values (RSI, ADX, BB position, etc.)

@@ -207,6 +207,32 @@ class MACDScanner:
             
             price_change_pct = ((latest['Close'] - data['Close'].iloc[-5]) / data['Close'].iloc[-5] * 100) if len(data) >= 5 else 0
             
+            # Calculate trading levels (Entry, Stop Loss, Take Profit)
+            entry_price = latest['Close']
+            risk_reward_ratio = 2.0  # 2:1 reward to risk
+            
+            if 'LONG' in signal:
+                # For LONG positions
+                # Stop loss: Use EMA-200 if available, otherwise 5% below entry
+                if self.use_ema200 and 'EMA_200' in data.columns:
+                    stop_loss = min(latest['EMA_200'], entry_price * 0.95)  # Use lower of EMA-200 or 5% below
+                else:
+                    stop_loss = entry_price * 0.95  # 5% below entry
+                
+                risk_per_share = entry_price - stop_loss
+                take_profit = entry_price + (risk_per_share * risk_reward_ratio)
+                
+            else:  # SHORT positions
+                # For SHORT positions
+                # Stop loss: Use EMA-200 if available, otherwise 5% above entry
+                if self.use_ema200 and 'EMA_200' in data.columns:
+                    stop_loss = max(latest['EMA_200'], entry_price * 1.05)  # Use higher of EMA-200 or 5% above
+                else:
+                    stop_loss = entry_price * 1.05  # 5% above entry
+                
+                risk_per_share = stop_loss - entry_price
+                take_profit = entry_price - (risk_per_share * risk_reward_ratio)
+            
             # Build result dictionary with conditional fields
             result = {
                 'ticker': ticker,
@@ -214,6 +240,10 @@ class MACDScanner:
                 'days_since_crossover': days_since_crossover,
                 'crossover_position': 'Above Zero' if crossover_macd_value > 0 else 'Below Zero',
                 'current_price': round(latest['Close'], 2),
+                'entry_price': round(entry_price, 2),
+                'stop_loss': round(stop_loss, 2),
+                'take_profit': round(take_profit, 2),
+                'risk_reward_ratio': f"{risk_reward_ratio}:1",
                 'macd': round(latest['MACD'], 4),
                 'signal_line': round(latest['Signal'], 4),
                 'histogram': round(latest['Histogram'], 4)
