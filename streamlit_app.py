@@ -397,13 +397,8 @@ st.sidebar.markdown(f"{'🤖' if use_ml else '❌'} ML Filter (Confidence: {ml_c
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    st.markdown("""
-    <div class='custom-card'>
-        <h2 style='margin-top: 0; color: #e2e8f0;'>🔍 Scanner Controls</h2>
-        <p style='color: #a0aec0; margin-bottom: 1rem;'>
-            Click below to scan all S&P 500 stocks for fresh MACD signals
-        </p>
-    """, unsafe_allow_html=True)
+    st.subheader("🔍 Scanner Controls")
+    st.caption("Click below to scan all S&P 500 stocks for fresh MACD signals")
     
     if st.button("🚀 Start Scan", type="primary", use_container_width=True):
         # Initialize scanner
@@ -443,12 +438,9 @@ with col1:
             st.success(f"✅ Found {len(results)} fresh signals!")
         else:
             st.warning("No fresh signals found.")
-    
-    st.markdown("</div>", unsafe_allow_html=True)
 
 with col2:
-    st.markdown("<div class='custom-card'>", unsafe_allow_html=True)
-    st.markdown("<h3 style='margin-top: 0; text-align: center;'>ℹ️ About Scanner</h3>", unsafe_allow_html=True)
+    st.subheader("ℹ️ About Scanner")
     
     st.markdown("#### 📊 Signal Types")
     st.markdown("""
@@ -479,7 +471,6 @@ with col2:
     - Trend & momentum analysis
     - AI quality filtering
     """)
-    st.markdown("</div>", unsafe_allow_html=True)
 
 # Display results if they exist
 if 'results' in st.session_state and len(st.session_state['results']) > 0:
