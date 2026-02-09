@@ -60,6 +60,14 @@ macd_signal = st.sidebar.number_input("Signal Line", min_value=5, max_value=20, 
 ema_period = st.sidebar.number_input("EMA Period", min_value=50, max_value=300, value=200)
 
 st.sidebar.markdown("---")
+st.sidebar.subheader("🤖 Machine Learning Filter")
+use_ml = st.sidebar.checkbox("Enable ML Filtering", value=True,
+                             help="Filter signals using XGBoost + LSTM ensemble models")
+ml_confidence = st.sidebar.slider("ML Confidence Threshold", 
+                                  min_value=0.5, max_value=0.95, value=0.65, step=0.05,
+                                  help="Minimum confidence to show signals (higher = more selective)")
+
+st.sidebar.markdown("---")
 
 # Display active indicators
 st.sidebar.markdown("---")
@@ -69,6 +77,7 @@ st.sidebar.markdown(f"{'✅' if use_rsi else '❌'} RSI")
 st.sidebar.markdown(f"{'✅' if use_adx else '❌'} ADX")
 st.sidebar.markdown(f"{'✅' if use_bollinger else '❌'} Bollinger Bands")
 st.sidebar.markdown(f"{'✅' if use_ema200 else '❌'} EMA-200")
+st.sidebar.markdown(f"{'🤖' if use_ml else '❌'} ML Filter (Confidence: {ml_confidence*100:.0f}%)")
 
 # Main content
 col1, col2 = st.columns([2, 1])
@@ -87,7 +96,9 @@ with col1:
                 use_rsi=use_rsi,
                 use_adx=use_adx,
                 use_bollinger=use_bollinger,
-                use_ema200=use_ema200
+                use_ema200=use_ema200,
+                use_ml_filter=use_ml,
+                ml_confidence_threshold=ml_confidence
             )
         
         # Scan all S&P 500 stocks
@@ -122,6 +133,11 @@ with col2:
     - 🔴 **STRONG SHORT**: High probability bearish setup
     - 🟠 **SHORT**: Bearish setup with confirmations
     
+    **Machine Learning:**
+    - 🤖 **XGBoost + LSTM Ensemble**: Trained on 29,538 historical signals
+    - 📊 **Confidence Grades**: A+ to F based on ML prediction
+    - ⚡ **GPU Accelerated**: Fast predictions using NVIDIA CUDA
+    
     **Trading Levels:**
     - 💰 **Entry**: Current market price
     - 🛡️ **Stop Loss**: 5% from entry
@@ -131,6 +147,7 @@ with col2:
     - Fresh signals (0-7 days since crossover)
     - Multiple indicator confirmations
     - Trend and momentum analysis
+    - ML quality filtering (optional)
     """)
 
 # Display results if they exist
@@ -160,7 +177,9 @@ if 'results' in st.session_state and len(st.session_state['results']) > 0:
         'volume_ratio': 'Volume Ratio',
         'price_change_5d_pct': 'Price Change 5D %',
         'crossover_date': 'Crossover Date',
-        'current_date': 'Current Date'
+        'current_date': 'Current Date',
+        'ml_confidence': 'ML Confidence',
+        'ml_grade': 'ML Grade'
     }
     results = results.rename(columns=column_rename)
     
@@ -171,12 +190,11 @@ if 'results' in st.session_state and len(st.session_state['results']) > 0:
     # Sorting options
     col_sort1, col_sort2 = st.columns([2, 1])
     with col_sort1:
-        sort_by = st.selectbox(
-            "Sort by:",
-            ["Signal Strength", "Days Since Crossover", "Current Price", "Take Profit", 
-             "Stop Loss", "Volume Ratio", "ADX", "RSI", "Price Change 5D %"],
-            key="sort_by"
-        )
+        sort_options = ["Signal Strength", "Days Since Crossover", "Current Price", "Take Profit", 
+                       "Stop Loss", "Volume Ratio", "ADX", "RSI", "Price Change 5D %"]
+        if 'ML Confidence' in results.columns:
+            sort_options.insert(1, "ML Confidence")
+        sort_by = st.selectbox("Sort by:", sort_options, key="sort_by")
     with col_sort2:
         sort_order = st.radio("Order:", ["Ascending", "Descending"], horizontal=True, key="sort_order")
     

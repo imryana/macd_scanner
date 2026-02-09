@@ -31,6 +31,18 @@ Thumbs.db
 *.csv
 *.xlsx
 *.xls
+*.npy
+
+# ML Models and training artifacts
+*.pkl
+*.pth
+*_diagnostics*.png
+*_training_history*.png
+training_data*
+
+# Virtual environments
+venv_ml/
+venv/
 
 # Streamlit
 .streamlit/secrets.toml

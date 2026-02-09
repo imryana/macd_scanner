@@ -7,8 +7,17 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 from datetime import datetime, timedelta
+import os
 import warnings
 warnings.filterwarnings('ignore')
+
+# Try to import ML components (optional)
+try:
+    from ensemble_predictor import EnsemblePredictor
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+    print("⚠️  ML modules not available. Run without ML filtering.")
 
 
 class MACDScanner:
@@ -23,7 +32,8 @@ class MACDScanner:
     """
     
     def __init__(self, macd_fast=12, macd_slow=26, macd_signal=9, ema_period=200,
-                 use_rsi=True, use_adx=True, use_bollinger=True, use_ema200=True):
+                 use_rsi=True, use_adx=True, use_bollinger=True, use_ema200=True,
+                 use_ml_filter=False, ml_confidence_threshold=0.65, ml_target_period=5):
         self.macd_fast = macd_fast
         self.macd_slow = macd_slow
         self.macd_signal = macd_signal
@@ -35,6 +45,39 @@ class MACDScanner:
         self.use_bollinger = use_bollinger
         self.use_ema200 = use_ema200
         
+        # ML settings
+        self.use_ml_filter = use_ml_filter and ML_AVAILABLE
+        self.ml_confidence_threshold = ml_confidence_threshold
+        self.ml_target_period = ml_target_period
+        self.ml_ensemble = None
+        
+        # Load ML models if requested
+        if self.use_ml_filter:
+            self._load_ml_models()
+        
+    def _load_ml_models(self):
+        """Load trained ML models for signal filtering"""
+        try:
+            xgb_path = f'xgboost_model_{self.ml_target_period}d.pkl'
+            lstm_path = f'lstm_model_{self.ml_target_period}d.pth'
+            
+            if not os.path.exists(xgb_path) or not os.path.exists(lstm_path):
+                print(f"⚠️  ML models not found. Train models first using: python train_models.py")
+                self.use_ml_filter = False
+                return
+            
+            self.ml_ensemble = EnsemblePredictor(
+                xgboost_weight=0.4,
+                lstm_weight=0.6,
+                confidence_threshold=self.ml_confidence_threshold,
+                target_period=self.ml_target_period
+            )
+            self.ml_ensemble.load_models(xgb_path, lstm_path)
+            print(f"✅ ML models loaded ({self.ml_target_period}-day prediction, threshold: {self.ml_confidence_threshold:.0%})")
+        except Exception as e:
+            print(f"⚠️  Error loading ML models: {e}")
+            self.use_ml_filter = False
+    
     def calculate_ema(self, data, period):
         """Calculate Exponential Moving Average"""
         return data.ewm(span=period, adjust=False).mean()
@@ -264,6 +307,29 @@ class MACDScanner:
             result['crossover_date'] = last_crossover_date.strftime('%Y-%m-%d')
             result['current_date'] = data.index[-1].strftime('%Y-%m-%d')
             
+            # ML Filtering (if enabled)
+            if self.use_ml_filter and self.ml_ensemble is not None:
+                try:
+                    # Extract features for ML
+                    idx = data.index.get_loc(data.index[-1])
+                    snapshot_features, sequence_features = self._extract_ml_features(data, idx, crossover_type)
+                    
+                    if snapshot_features is not None and sequence_features is not None:
+                        # Get ML prediction
+                        ml_result = self.ml_ensemble.predict(snapshot_features, sequence_features)
+                        
+                        # Add ML info to result
+                        result['ml_confidence'] = ml_result['ensemble_confidence']
+                        result['ml_grade'] = ml_result['signal_grade']
+                        result['signal'] = f"{signal} ({ml_result['ml_grade']})"  # Add grade to signal
+                        
+                        # Filter out low-confidence signals
+                        if not ml_result['accept_signal']:
+                            return None  # Reject this signal
+                except Exception as e:
+                    print(f"⚠️  ML prediction error for {ticker}: {e}")
+                    # Continue without ML filtering if error occurs
+            
             return result
             
         except Exception as e:
@@ -388,6 +454,94 @@ class MACDScanner:
         
         return None
     
+    def _extract_ml_features(self, data, idx, crossover_type):
+        """
+        Extract ML features for ensemble prediction
+        Returns snapshot features (dict) and sequence features (numpy array)
+        """
+        if idx < 20:
+            return None, None
+        
+        window = data.iloc[max(0, idx-60):idx+1]
+        latest = window.iloc[-1]
+        
+        # Snapshot features for XGBoost
+        snapshot_features = {
+            'macd_value': latest['MACD'],
+            'macd_signal': latest['Signal'],
+            'macd_histogram': latest['Histogram'],
+            'macd_above_zero': int(latest['MACD'] > 0),
+            'histogram_slope': (window['Histogram'].iloc[-1] - window['Histogram'].iloc[-5]) / 5 if len(window) >= 5 else 0,
+            'histogram_momentum': window['Histogram'].iloc[-5:].mean() if len(window) >= 5 else 0,
+            'rsi': latest.get('RSI', 50),
+            'rsi_oversold': int(latest.get('RSI', 50) < 30),
+            'rsi_overbought': int(latest.get('RSI', 50) > 70),
+            'rsi_neutral': int(30 <= latest.get('RSI', 50) <= 70),
+            'rsi_slope': (latest.get('RSI', 50) - window.get('RSI', pd.Series([50]*len(window))).iloc[-5]) / 5 if len(window) >= 5 else 0,
+            'adx': latest.get('ADX', 20),
+            'plus_di': latest.get('Plus_DI', 20),
+            'minus_di': latest.get('Minus_DI', 20),
+            'di_diff': latest.get('Plus_DI', 20) - latest.get('Minus_DI', 20),
+            'adx_strong': int(latest.get('ADX', 20) > 25),
+            'price': latest['Close'],
+            'distance_from_ema200_pct': ((latest['Close'] - latest.get('EMA_200', latest['Close'])) / latest.get('EMA_200', latest['Close']) * 100) if 'EMA_200' in latest and latest.get('EMA_200', 0) > 0 else 0,
+            'price_above_ema200': int(latest['Close'] > latest.get('EMA_200', latest['Close'])),
+            'returns_1d': ((latest['Close'] - window.iloc[-2]['Close']) / window.iloc[-2]['Close'] * 100) if len(window) >= 2 else 0,
+            'returns_5d': ((latest['Close'] - window.iloc[-6]['Close']) / window.iloc[-6]['Close'] * 100) if len(window) >= 6 else 0,
+            'returns_10d': ((latest['Close'] - window.iloc[-11]['Close']) / window.iloc[-11]['Close'] * 100) if len(window) >= 11 else 0,
+            'returns_20d': ((latest['Close'] - window.iloc[-21]['Close']) / window.iloc[-21]['Close'] * 100) if len(window) >= 21 else 0,
+            'volume': latest['Volume'],
+            'volume_ratio_20d': latest['Volume'] / window['Volume'].mean() if window['Volume'].mean() > 0 else 1,
+            'volume_trend': int(window['Volume'].iloc[-5:].mean() > window['Volume'].iloc[-11:-5].mean()) if len(window) >= 11 else 0,
+            'bb_position': latest.get('BB_PercentB', 0.5),
+            'bb_bandwidth': latest.get('BB_Bandwidth', 0.04),
+            'bb_squeeze': int(latest.get('BB_Bandwidth', 0.04) < window.get('BB_Bandwidth', pd.Series([0.04]*len(window))).quantile(0.2)) if len(window) >= 20 else 0,
+            'volatility_10d': window['Close'].pct_change().iloc[-10:].std() * 100 if len(window) >= 10 else 0,
+            'volatility_20d': window['Close'].pct_change().iloc[-20:].std() * 100 if len(window) >= 20 else 0,
+            'crossover_type': crossover_type,
+        }
+        
+        # Sequence features for LSTM (last 30 days)
+        sequence_length = min(30, len(window))
+        sequence_cols = ['Close', 'Volume', 'MACD', 'Signal']
+        
+        # Add optional indicators if they exist
+        if 'RSI' in window.columns:
+            sequence_cols.append('RSI')
+        else:
+            window['RSI'] = 50
+            sequence_cols.append('RSI')
+        
+        if 'ADX' in window.columns:
+            sequence_cols.append('ADX')
+        else:
+            window['ADX'] = 20
+            sequence_cols.append('ADX')
+        
+        if 'BB_PercentB' in window.columns:
+            sequence_cols.append('BB_PercentB')
+        else:
+            window['BB_PercentB'] = 0.5
+            sequence_cols.append('BB_PercentB')
+        
+        if 'EMA_200' in window.columns:
+            sequence_cols.append('EMA_200')
+        else:
+            window['EMA_200'] = window['Close'].mean()
+            sequence_cols.append('EMA_200')
+        
+        sequence_data = window.iloc[-sequence_length:][sequence_cols]
+        
+        # Normalize sequence
+        sequence_normalized = sequence_data.copy()
+        for col in sequence_data.columns:
+            if sequence_data[col].std() > 0:
+                sequence_normalized[col] = (sequence_data[col] - sequence_data[col].mean()) / sequence_data[col].std()
+            else:
+                sequence_normalized[col] = 0
+        
+        return snapshot_features, sequence_normalized.values
+    
     def get_sp500_tickers(self):
         """
         Get list of S&P 500 tickers from Wikipedia
@@ -477,11 +631,27 @@ def main():
     USE_EMA200 = True     # 200-period EMA (trend filter)
     # ==========================================
     
+    # ============ MACHINE LEARNING FILTER ============
+    # Set to True to enable ML-based signal filtering (requires trained models)
+    # This will filter out low-quality signals using XGBoost + LSTM ensemble
+    USE_ML_FILTER = True            # Enable/disable ML filtering
+    ML_CONFIDENCE_THRESHOLD = 0.65  # Minimum confidence (0.5-0.95)
+    ML_TARGET_PERIOD = 5            # Prediction horizon: 5, 10, or 20 days
+    # =================================================
+    
     print("\nActive Indicators:")
     print(f"  RSI: {'ON' if USE_RSI else 'OFF'}")
     print(f"  ADX: {'ON' if USE_ADX else 'OFF'}")
     print(f"  Bollinger Bands: {'ON' if USE_BOLLINGER else 'OFF'}")
     print(f"  EMA-200: {'ON' if USE_EMA200 else 'OFF'}")
+    
+    if ML_AVAILABLE and USE_ML_FILTER:
+        print(f"\n🤖 Machine Learning Filter: ON")
+        print(f"   Confidence Threshold: {ML_CONFIDENCE_THRESHOLD:.0%}")
+        print(f"   Prediction Period: {ML_TARGET_PERIOD} days")
+    else:
+        print(f"\n🤖 Machine Learning Filter: OFF")
+    
     print("-" * 80)
     
     # Initialize scanner with toggles
@@ -493,7 +663,10 @@ def main():
         use_rsi=USE_RSI,
         use_adx=USE_ADX,
         use_bollinger=USE_BOLLINGER,
-        use_ema200=USE_EMA200
+        use_ema200=USE_EMA200,
+        use_ml_filter=USE_ML_FILTER,
+        ml_confidence_threshold=ML_CONFIDENCE_THRESHOLD,
+        ml_target_period=ML_TARGET_PERIOD
     )
     
     # Scan all stocks
