@@ -400,10 +400,9 @@ with col1:
     st.markdown("""
     <div class='custom-card'>
         <h2 style='margin-top: 0; color: #e2e8f0;'>🔍 Scanner Controls</h2>
-        <p style='color: #a0aec0; margin-bottom: 1.5rem;'>
+        <p style='color: #a0aec0; margin-bottom: 1rem;'>
             Click below to scan all S&P 500 stocks for fresh MACD signals
         </p>
-    </div>
     """, unsafe_allow_html=True)
     
     if st.button("🚀 Start Scan", type="primary", use_container_width=True):
@@ -444,6 +443,8 @@ with col1:
             st.success(f"✅ Found {len(results)} fresh signals!")
         else:
             st.warning("No fresh signals found.")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
 with col2:
     st.markdown("<div class='custom-card'>", unsafe_allow_html=True)
@@ -697,136 +698,96 @@ else:
     
     # Show example of what to expect
     with st.expander("💡 What will I see after scanning?"):
+        st.markdown("#### After scanning, you'll see:")
         st.markdown("""
-        <div style='padding: 1rem;'>
-            <h4 style='color: #a78bfa; margin-top: 0;'>After scanning, you'll see:</h4>
-            
-            <div style='background: rgba(102, 126, 234, 0.12); 
-                        padding: 1rem; border-radius: 10px; margin: 1rem 0; border-left: 4px solid #667eea;'>
-                <ul style='margin: 0; line-height: 1.8; color: #cbd5e0;'>
-                    <li>📊 <strong>Summary metrics</strong> with total signals found</li>
-                    <li>📋 <strong>Interactive tables</strong> with all signal details</li>
-                    <li>💰 <strong>Trading levels</strong> - Entry, Stop loss, Take profit (1.5:1 ratio)</li>
-                    <li>🔄 <strong>Sorting options</strong> - By strength, freshness, price, etc.</li>
-                    <li>🎯 <strong>Filtering options</strong> by signal type and volume</li>
-                    <li>📈 <strong>Analytics</strong> showing distribution and statistics</li>
-                    <li>⬇️ <strong>Download button</strong> to export results as CSV</li>
-                </ul>
-            </div>
-            
-            <h4 style='color: #a78bfa; margin-top: 1.5rem;'>Each signal includes:</h4>
-            
-            <div style='background: rgba(167, 139, 250, 0.12); 
-                        padding: 1rem; border-radius: 10px; margin: 1rem 0; border-left: 4px solid #a78bfa;'>
-                <ul style='margin: 0; line-height: 1.8; color: #cbd5e0;'>
-                    <li>🏷️ Ticker symbol and current price</li>
-                    <li>🎯 Signal type (STRONG LONG, LONG, SHORT, STRONG SHORT)</li>
-                    <li>💵 <strong>Entry, stop loss, and take profit levels</strong></li>
-                    <li>⏰ Days since crossover (fresher = better)</li>
-                    <li>📍 Crossover position (above/below zero line)</li>
-                    <li>📊 All indicator values (RSI, ADX, BB position, etc.)</li>
-                    <li>📈 Volume ratio and price momentum</li>
-                    <li>🤖 ML confidence score and grade (if enabled)</li>
-                </ul>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        - 📊 **Summary metrics** with total signals found
+        - 📋 **Interactive tables** with all signal details
+        - 💰 **Trading levels** - Entry, Stop loss, Take profit (1.5:1 ratio)
+        - 🔄 **Sorting options** - By strength, freshness, price, etc.
+        - 🎯 **Filtering options** by signal type and volume
+        - 📈 **Analytics** showing distribution and statistics
+        - ⬇️ **Download button** to export results as CSV
+        """)
+        
+        st.markdown("#### Each signal includes:")
+        st.markdown("""
+        - 🏷️ Ticker symbol and current price
+        - 🎯 Signal type (STRONG LONG, LONG, SHORT, STRONG SHORT)
+        - 💵 **Entry, stop loss, and take profit levels**
+        - ⏰ Days since crossover (fresher = better)
+        - 📍 Crossover position (above/below zero line)
+        - 📊 All indicator values (RSI, ADX, BB position, etc.)
+        - 📈 Volume ratio and price momentum
+        - 🤖 ML confidence score and grade (if enabled)
+        """)
 
 # Footer
 st.markdown("---")
 
 # How it works section
 with st.expander("🤖 How the ML Models Work"):
+    st.markdown("### Machine Learning Signal Quality Filter")
+    st.markdown("Our system uses a **hybrid ensemble** of two ML models to predict signal profitability")
+    
+    st.markdown("---")
+    st.markdown("#### 📊 Training Data")
     st.markdown("""
-    <div style='padding: 1rem;'>
-        <h3 style='color: #a78bfa; text-align: center; margin-top: 0;'>Machine Learning Signal Quality Filter</h3>
-        
-        <p style='text-align: center; color: #cbd5e0; font-size: 1.05rem; margin-bottom: 2rem;'>
-            Our system uses a <strong>hybrid ensemble</strong> of two ML models to predict signal profitability
-        </p>
-        
-        <div style='background: rgba(72, 187, 120, 0.12); 
-                    padding: 1.5rem; border-radius: 12px; margin: 1.5rem 0; border: 2px solid rgba(72, 187, 120, 0.4);'>
-            <h4 style='color: #9ae6b4; margin-top: 0;'>📊 Training Data</h4>
-            <ul style='line-height: 1.8; color: #cbd5e0;'>
-                <li><strong>29,538 historical MACD signals</strong> from 502 S&P 500 stocks</li>
-                <li><strong>3 years of data</strong> (2023-2026) capturing diverse market conditions</li>
-                <li><strong>46% baseline win rate</strong> - signals labeled profitable if 5-day return > 0%</li>
-            </ul>
-        </div>
-        
-        <h4 style='color: #a78bfa; margin-top: 2rem;'>🤖 Model Architecture</h4>
-        
-        <div style='background: rgba(102, 126, 234, 0.12); 
-                    padding: 1.5rem; border-radius: 12px; margin: 1rem 0; border-left: 4px solid #667eea;'>
-            <h5 style='color: #a78bfa; margin-top: 0;'>1️⃣ XGBoost Model (40% weight)</h5>
-            <ul style='line-height: 1.8; color: #cbd5e0;'>
-                <li>Gradient boosted decision trees optimized for feature-based classification</li>
-                <li>Analyzes <strong>31 engineered features</strong>: MACD, RSI, ADX, volume, Bollinger Bands, momentum</li>
-                <li><strong>56.7% AUC</strong> on test set</li>
-                <li>Top features: signal direction, MACD histogram, price position</li>
-            </ul>
-        </div>
-        
-        <div style='background: rgba(167, 139, 250, 0.12); 
-                    padding: 1.5rem; border-radius: 12px; margin: 1rem 0; border-left: 4px solid #a78bfa;'>
-            <h5 style='color: #c4b5fd; margin-top: 0;'>2️⃣ LSTM Neural Network (60% weight)</h5>
-            <ul style='line-height: 1.8; color: #cbd5e0;'>
-                <li>2-layer LSTM with attention mechanism for temporal pattern recognition</li>
-                <li>Processes <strong>30-day sequences</strong> of 8 normalized indicators</li>
-                <li><strong>GPU-accelerated</strong> training on NVIDIA CUDA</li>
-                <li><strong>53.1% AUC</strong> on test set</li>
-                <li>Captures time-series patterns invisible to feature-based models</li>
-            </ul>
-        </div>
-        
-        <div style='background: rgba(246, 173, 85, 0.12); 
-                    padding: 1.5rem; border-radius: 12px; margin: 1.5rem 0; border: 2px solid rgba(246, 173, 85, 0.4);'>
-            <h4 style='color: #fbbf24; margin-top: 0;'>🎯 Ensemble Prediction</h4>
-            <ul style='line-height: 1.8; color: #cbd5e0;'>
-                <li>Combines both models with weighted voting (XGBoost 40%, LSTM 60%)</li>
-                <li>Generates <strong>confidence score</strong> (0-100%) for each signal</li>
-                <li>Assigns <strong>letter grades</strong> based on confidence:</li>
-            </ul>
-            <div style='margin-left: 2rem; margin-top: 1rem;'>
-                <p style='margin: 0.3rem 0; color: #cbd5e0;'>🏆 <strong>A+/A</strong>: 95-100% - Highest quality</p>
-                <p style='margin: 0.3rem 0; color: #cbd5e0;'>💎 <strong>B+/B</strong>: 85-95% - Strong signals</p>
-                <p style='margin: 0.3rem 0; color: #cbd5e0;'>✅ <strong>C+/C</strong>: 75-85% - Good signals</p>
-                <p style='margin: 0.3rem 0; color: #cbd5e0;'>⚠️ <strong>D+/D</strong>: 65-75% - Above threshold</p>
-                <p style='margin: 0.3rem 0; color: #cbd5e0;'>❌ <strong>F</strong>: <65% - Below threshold</p>
-            </div>
-        </div>
-        
-        <div style='background: rgba(66, 153, 225, 0.12); 
-                    padding: 1.5rem; border-radius: 12px; margin: 1.5rem 0; border: 2px solid rgba(66, 153, 225, 0.4);'>
-            <h4 style='color: #90cdf4; margin-top: 0;'>🔧 How It Improves Trading</h4>
-            <ul style='line-height: 1.8; color: #cbd5e0;'>
-                <li>✅ Filters out low-quality signals lacking predictive power</li>
-                <li>📊 Provides confidence-based ranking to prioritize opportunities</li>
-                <li>📉 Reduces false positives by ~40% vs technical indicators alone</li>
-                <li>🎯 Trained specifically on MACD crossovers, not generic predictions</li>
-            </ul>
-        </div>
-        
-        <div style='background: rgba(159, 122, 234, 0.12); 
-                    padding: 1.5rem; border-radius: 12px; margin: 1rem 0; border: 2px solid rgba(159, 122, 234, 0.4);'>
-            <h4 style='color: #c4b5fd; margin-top: 0;'>⚡ Performance</h4>
-            <ul style='line-height: 1.8; color: #cbd5e0;'>
-                <li>Models trained in ~8 minutes using GPU acceleration</li>
-                <li>Real-time prediction: <50ms per signal</li>
-                <li>Automatically retrains periodically on new data</li>
-            </ul>
-        </div>
-        
-        <div style='background: rgba(246, 173, 85, 0.15); padding: 1rem; border-radius: 10px; 
-                    border-left: 4px solid #fbbf24; margin-top: 1.5rem;'>
-            <p style='margin: 0; color: #fbd38d; font-size: 0.95rem;'>
-                <strong>⚠️ Disclaimer:</strong> ML predictions are probabilistic and should be combined 
-                with your own analysis and risk management. Past performance does not guarantee future results.
-            </p>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    - **29,538 historical MACD signals** from 502 S&P 500 stocks
+    - **3 years of data** (2023-2026) capturing diverse market conditions
+    - **46% baseline win rate** - signals labeled profitable if 5-day return > 0%
+    """)
+    
+    st.markdown("---")
+    st.markdown("#### 🤖 Model Architecture")
+    
+    st.markdown("**1️⃣ XGBoost Model (40% weight)**")
+    st.markdown("""
+    - Gradient boosted decision trees optimized for feature-based classification
+    - Analyzes **31 engineered features**: MACD, RSI, ADX, volume, Bollinger Bands, momentum
+    - **56.7% AUC** on test set
+    - Top features: signal direction, MACD histogram, price position
+    """)
+    
+    st.markdown("**2️⃣ LSTM Neural Network (60% weight)**")
+    st.markdown("""
+    - 2-layer LSTM with attention mechanism for temporal pattern recognition
+    - Processes **30-day sequences** of 8 normalized indicators
+    - **GPU-accelerated** training on NVIDIA CUDA
+    - **53.1% AUC** on test set
+    - Captures time-series patterns invisible to feature-based models
+    """)
+    
+    st.markdown("---")
+    st.markdown("#### 🎯 Ensemble Prediction")
+    st.markdown("""
+    - Combines both models with weighted voting (XGBoost 40%, LSTM 60%)
+    - Generates **confidence score** (0-100%) for each signal
+    - Assigns **letter grades** based on confidence:
+        - 🏆 **A+/A**: 95-100% - Highest quality
+        - 💎 **B+/B**: 85-95% - Strong signals
+        - ✅ **C+/C**: 75-85% - Good signals
+        - ⚠️ **D+/D**: 65-75% - Above threshold
+        - ❌ **F**: <65% - Below threshold
+    """)
+    
+    st.markdown("---")
+    st.markdown("#### 🔧 How It Improves Trading")
+    st.markdown("""
+    - ✅ Filters out low-quality signals lacking predictive power
+    - 📊 Provides confidence-based ranking to prioritize opportunities
+    - 📉 Reduces false positives by ~40% vs technical indicators alone
+    - 🎯 Trained specifically on MACD crossovers, not generic predictions
+    """)
+    
+    st.markdown("---")
+    st.markdown("#### ⚡ Performance")
+    st.markdown("""
+    - Models trained in ~8 minutes using GPU acceleration
+    - Real-time prediction: <50ms per signal
+    - Automatically retrains periodically on new data
+    """)
+    
+    st.warning("⚠️ **Disclaimer:** ML predictions are probabilistic and should be combined with your own analysis and risk management. Past performance does not guarantee future results.")
 
 st.markdown("""
 <div style='text-align: center; padding: 2rem 0 1rem 0; margin-top: 3rem; border-top: 2px solid rgba(102, 126, 234, 0.3);'>
