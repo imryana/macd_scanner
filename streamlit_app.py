@@ -897,7 +897,8 @@ if 'backtest_result' in st.session_state:
                   delta_color="normal")
         m3.metric("Total Return", f"{s['total_return']}%",
                   delta_color="normal")
-        m4.metric("Profit Factor", f"{s['profit_factor']}")
+        pf_display = "∞" if s['profit_factor'] == float('inf') else f"{s['profit_factor']}"
+        m4.metric("Profit Factor", pf_display)
         m5.metric("Expectancy", f"{s['expectancy']}%/trade")
 
         # Second row
@@ -1121,7 +1122,8 @@ if 'realistic_result' in st.session_state:
                   delta_color="normal")
         m3.metric("Total Return", f"{s['total_return']}%",
                   delta_color="normal")
-        m4.metric("Profit Factor", f"{s['profit_factor']}")
+        pf_display = "∞" if s['profit_factor'] == float('inf') else f"{s['profit_factor']}"
+        m4.metric("Profit Factor", pf_display)
         m5.metric("Expectancy", f"{s['expectancy']}%/trade")
 
         m6, m7, m8, m9 = st.columns(4)
