@@ -940,11 +940,15 @@ if 'backtest_result' in st.session_state:
                     'stop_loss': 'SL', 'take_profit': 'TP',
                     'exit_price': 'Exit', 'exit_reason': 'Exit Reason',
                     'pnl_pct': 'P&L %', 'hold_days': 'Hold Days',
-                    'rsi_at_entry': 'RSI'
+                    'rsi_at_entry': 'RSI', 'ml_grade': 'ML Grade'
                 })
-                # Drop internal columns
-                drop_cols = [c for c in ['macd_at_entry'] if c in display_trades.columns]
+                # Drop internal columns and columns that are all None
+                drop_cols = [c for c in ['macd_at_entry', 'entry_delay_days'] if c in display_trades.columns]
                 display_trades = display_trades.drop(columns=drop_cols, errors='ignore')
+                if 'ML Grade' in display_trades.columns and display_trades['ML Grade'].isna().all():
+                    display_trades = display_trades.drop(columns=['ML Grade'])
+                if 'RSI' in display_trades.columns:
+                    display_trades['RSI'] = display_trades['RSI'].fillna('-')
                 st.dataframe(display_trades, use_container_width=True, hide_index=True, height=400)
 
                 csv = display_trades.to_csv(index=False).encode('utf-8')
@@ -1170,8 +1174,14 @@ if 'realistic_result' in st.session_state:
                     'stop_loss': 'SL', 'take_profit': 'TP',
                     'exit_price': 'Exit', 'exit_reason': 'Exit Reason',
                     'pnl_pct': 'P&L %', 'mfe_pct': 'Best Move %',
-                    'hold_days': 'Hold Days', 'rsi_at_entry': 'RSI'
+                    'hold_days': 'Hold Days', 'rsi_at_entry': 'RSI',
+                    'ml_grade': 'ML Grade'
                 })
+                # Drop columns that are all None or internal
+                if 'ML Grade' in display_trades.columns and display_trades['ML Grade'].isna().all():
+                    display_trades = display_trades.drop(columns=['ML Grade'])
+                if 'RSI' in display_trades.columns:
+                    display_trades['RSI'] = display_trades['RSI'].fillna('-')
                 st.dataframe(display_trades, use_container_width=True, hide_index=True, height=400)
 
                 csv = display_trades.to_csv(index=False).encode('utf-8')
