@@ -58,8 +58,11 @@ class MACDScanner:
     def _load_ml_models(self):
         """Load trained ML models for signal filtering"""
         try:
-            xgb_path = f'xgboost_model_{self.ml_target_period}d.pkl'
-            lstm_path = f'lstm_model_{self.ml_target_period}d.pth'
+            # Use script directory for model paths (works on Streamlit Cloud)
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            xgb_path = os.path.join(script_dir, f'xgboost_model_{self.ml_target_period}d.pkl')
+            lstm_path = os.path.join(script_dir, f'lstm_model_{self.ml_target_period}d.pth')
+            exit_path = os.path.join(script_dir, 'exit_timing_model.pkl')
             
             if not os.path.exists(xgb_path) or not os.path.exists(lstm_path):
                 print(f"⚠️  ML models not found. Train models first using: python train_models.py")
@@ -73,7 +76,7 @@ class MACDScanner:
                 target_period=self.ml_target_period
             )
             self.ml_ensemble.load_models(xgb_path, lstm_path)
-            self.ml_ensemble.load_exit_model()  # Load exit timing model if available
+            self.ml_ensemble.load_exit_model(exit_path)  # Load exit timing model if available
             print(f"✅ ML models loaded ({self.ml_target_period}-day prediction, threshold: {self.ml_confidence_threshold:.0%})")
         except Exception as e:
             print(f"⚠️  Error loading ML models: {e}")
