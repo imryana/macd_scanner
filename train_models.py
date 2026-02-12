@@ -352,8 +352,9 @@ if __name__ == "__main__":
             pipeline = ModelTrainingPipeline()
             prep = DataPreparation()
             tickers = prep.load_sp500_tickers()
-            pipeline.run_full_pipeline(tickers=tickers, target_period=5, 
-                                      optimize_xgboost=True, lstm_epochs=100)
+            for period in [5, 10, 20]:
+                pipeline.run_full_pipeline(tickers=tickers, target_period=period, 
+                                          optimize_xgboost=True, lstm_epochs=100)
         else:
             print("Usage: python train_models.py [--quick | --full]")
     else:
