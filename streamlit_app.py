@@ -5,8 +5,10 @@ Real-time scanning of S&P 500 stocks for MACD trading signals
 
 import streamlit as st
 import pandas as pd
+import numpy as np
 from macd_scanner import MACDScanner
-from datetime import datetime
+from backtester import MACDBacktester
+from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -722,6 +724,156 @@ else:
         - 📈 Volume ratio and price momentum
         - 🤖 ML confidence score and grade (if enabled)
         """)
+
+# ══════════════════════════════════════════════════════════════════════
+# BACKTESTER SECTION
+# ══════════════════════════════════════════════════════════════════════
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; padding: 1rem 0 2rem 0;'>
+    <h2 style='font-size: 2.5rem; margin-bottom: 0.5rem;'>🔬 Strategy Backtester</h2>
+    <p style='font-size: 1.1rem; color: #cbd5e0;'>
+        Test MACD crossover signals on any stock with historical data
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+bt_col1, bt_col2 = st.columns([1, 1])
+
+with bt_col1:
+    bt_ticker = st.text_input("Stock Ticker", value="AAPL", max_chars=10,
+                               help="Enter any stock symbol (e.g. AAPL, MSFT, TSLA)").upper().strip()
+    bt_period = st.selectbox("Lookback Period", 
+                              options=["1y", "2y", "3y", "5y", "10y"],
+                              index=3,
+                              format_func=lambda x: {"1y": "1 Year", "2y": "2 Years", 
+                                                      "3y": "3 Years", "5y": "5 Years",
+                                                      "10y": "10 Years"}[x])
+
+with bt_col2:
+    bt_rr = st.number_input("Risk:Reward Ratio", min_value=0.5, max_value=5.0, 
+                             value=1.5, step=0.1,
+                             help="Take profit = stop loss × this ratio")
+    bt_sl = st.number_input("Stop Loss %", min_value=1.0, max_value=15.0, 
+                             value=5.0, step=0.5,
+                             help="Percentage below entry for stop loss")
+
+bt_col3, bt_col4 = st.columns([1, 1])
+with bt_col3:
+    bt_max_hold = st.number_input("Max Hold Days", min_value=5, max_value=60, 
+                                   value=20, step=5,
+                                   help="Force exit if neither SL nor TP hit")
+with bt_col4:
+    bt_trade_type = st.selectbox("Trade Direction", 
+                                  options=["both", "long", "short"],
+                                  format_func=lambda x: {"both": "Both Long & Short", 
+                                                          "long": "Long Only",
+                                                          "short": "Short Only"}[x])
+
+bt_require_ema = st.checkbox("Require EMA-200 confirmation", value=False,
+                              help="Only take longs above EMA-200, shorts below")
+
+if st.button("📊 Run Backtest", type="primary", use_container_width=True):
+    if not bt_ticker:
+        st.error("Please enter a ticker symbol.")
+    else:
+        with st.spinner(f"Running backtest on {bt_ticker}..."):
+            bt = MACDBacktester(
+                stop_loss_pct=bt_sl / 100,
+                risk_reward_ratio=bt_rr,
+                max_hold_days=bt_max_hold
+            )
+            result = bt.run(
+                bt_ticker,
+                period=bt_period,
+                trade_type=bt_trade_type,
+                require_ema200=bt_require_ema
+            )
+        
+        if 'error' in result:
+            st.error(result['error'])
+        else:
+            s = result['summary']
+            st.session_state['backtest_result'] = result
+            st.session_state['backtest_ticker'] = bt_ticker
+
+# Display backtest results
+if 'backtest_result' in st.session_state:
+    result = st.session_state['backtest_result']
+    s = result['summary']
+    bt_ticker_display = st.session_state.get('backtest_ticker', '')
+
+    st.markdown(f"""
+    <div style='text-align: center; padding: 1rem; background: rgba(102, 126, 234, 0.15); 
+                border-radius: 10px; margin: 1rem 0; border: 2px solid rgba(102, 126, 234, 0.4);'>
+        <h3 style='color: #a78bfa; margin: 0;'>📊 Backtest Results: {bt_ticker_display}</h3>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if s['total_trades'] == 0:
+        st.warning("No trades found in the selected period.")
+    else:
+        # Key metrics row
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Total Trades", s['total_trades'])
+        m2.metric("Win Rate", f"{s['win_rate']}%",
+                  delta=f"{s['win_rate'] - 50:.1f}% vs coin flip" if s['win_rate'] != 50 else None,
+                  delta_color="normal")
+        m3.metric("Total Return", f"{s['total_return']}%",
+                  delta_color="normal")
+        m4.metric("Profit Factor", f"{s['profit_factor']}")
+        m5.metric("Expectancy", f"{s['expectancy']}%/trade")
+
+        # Second row
+        m6, m7, m8, m9 = st.columns(4)
+        m6.metric("Avg Win", f"+{s['avg_win']}%")
+        m7.metric("Avg Loss", f"{s['avg_loss']}%")
+        m8.metric("Best Trade", f"+{s['max_win']}%")
+        m9.metric("Worst Trade", f"{s['max_loss']}%")
+
+        # Exit breakdown & direction stats
+        st.markdown("<h4 style='color: #a78bfa; margin-top: 1.5rem;'>📈 Trade Breakdown</h4>", unsafe_allow_html=True)
+        e1, e2, e3 = st.columns(3)
+        e1.metric("🎯 Take Profit Hits", s['tp_hits'])
+        e2.metric("🛑 Stop Loss Hits", s['sl_hits'])
+        e3.metric("⏰ Max Hold Exits", s['max_hold_exits'])
+
+        d1, d2, d3, d4 = st.columns(4)
+        d1.metric("Long Trades", s['long_trades'])
+        d2.metric("Long Win Rate", f"{s['long_win_rate']}%")
+        d3.metric("Short Trades", s['short_trades'])
+        d4.metric("Short Win Rate", f"{s['short_win_rate']}%")
+
+        # Tabs for equity curve and trade log
+        bt_tab1, bt_tab2 = st.tabs(["📈 Equity Curve", "📋 Trade Log"])
+
+        with bt_tab1:
+            equity = result['equity_curve']
+            if len(equity) > 1:
+                chart_data = equity.set_index('trade_num')['cumulative_return']
+                st.line_chart(chart_data, use_container_width=True)
+                st.caption("Cumulative return (%) after each trade")
+
+        with bt_tab2:
+            trades_df = result['trades']
+            if isinstance(trades_df, pd.DataFrame) and len(trades_df) > 0:
+                display_trades = trades_df.rename(columns={
+                    'entry_date': 'Entry Date', 'exit_date': 'Exit Date',
+                    'direction': 'Direction', 'entry_price': 'Entry',
+                    'stop_loss': 'SL', 'take_profit': 'TP',
+                    'exit_price': 'Exit', 'exit_reason': 'Exit Reason',
+                    'pnl_pct': 'P&L %', 'hold_days': 'Hold Days',
+                    'rsi_at_entry': 'RSI'
+                })
+                # Drop internal columns
+                drop_cols = [c for c in ['macd_at_entry'] if c in display_trades.columns]
+                display_trades = display_trades.drop(columns=drop_cols, errors='ignore')
+                st.dataframe(display_trades, use_container_width=True, hide_index=True, height=400)
+
+                csv = display_trades.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Download Trade Log", csv,
+                                    file_name=f"backtest_{bt_ticker_display}_{datetime.now().strftime('%Y%m%d')}.csv",
+                                    mime="text/csv")
 
 # Footer
 st.markdown("---")
