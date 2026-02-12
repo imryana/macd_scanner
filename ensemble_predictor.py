@@ -5,8 +5,14 @@ Uses weighted voting for final signal quality prediction
 
 import numpy as np
 import torch
+import os
 from ml_model import MACDXGBoostModel
 from lstm_model import LSTMTrainer, MACDLSTMModel
+try:
+    from exit_model import ExitTimingModel
+    EXIT_MODEL_AVAILABLE = True
+except ImportError:
+    EXIT_MODEL_AVAILABLE = False
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -42,6 +48,7 @@ class EnsemblePredictor:
         # Models
         self.xgboost_model = None
         self.lstm_model = None
+        self.exit_model = None
         
         print("="*60)
         print("Ensemble Predictor Initialized")
@@ -94,6 +101,26 @@ class EnsemblePredictor:
             raise ValueError("❌ No models available! Train models first.")
         
         print("✅ Models loaded successfully\n")
+    
+    def load_exit_model(self, exit_path='exit_timing_model.pkl'):
+        """
+        Load exit timing model (optional)
+        
+        Args:
+            exit_path: Path to exit timing model file
+        """
+        if not EXIT_MODEL_AVAILABLE:
+            return
+        
+        try:
+            if os.path.exists(exit_path):
+                self.exit_model = ExitTimingModel()
+                self.exit_model.load(exit_path)
+            else:
+                self.exit_model = None
+        except Exception as e:
+            print(f"⚠️  Exit model load error: {e}")
+            self.exit_model = None
     
     def predict(self, snapshot_features, sequence_features):
         """
@@ -163,8 +190,30 @@ class EnsemblePredictor:
             'xgboost_confidence': round(xgboost_conf, 3) if xgboost_conf is not None else None,
             'lstm_confidence': round(lstm_conf, 3) if lstm_conf is not None else None,
             'accept_signal': accept_signal,
-            'signal_grade': signal_grade
+            'signal_grade': signal_grade,
+            **self._get_exit_recommendation(snapshot_features)
         }
+    
+    def _get_exit_recommendation(self, snapshot_features):
+        """
+        Get exit timing recommendation if exit model is loaded
+        
+        Returns:
+            dict with exit recommendation fields (empty dict if no model)
+        """
+        if self.exit_model is None:
+            return {}
+        
+        try:
+            rec = self.exit_model.get_exit_recommendation(snapshot_features)
+            return {
+                'recommended_exit_day': rec['exit_day'],
+                'exit_range': f"{rec['exit_range_low']}-{rec['exit_range_high']}",
+                'exit_label': rec['exit_label'],
+                'exit_description': rec['exit_description']
+            }
+        except Exception:
+            return {}
     
     def _grade_signal(self, confidence):
         """

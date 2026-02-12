@@ -43,6 +43,7 @@ training_data*
 # But allow trained model files for Streamlit Cloud deployment
 !xgboost_model_*d.pkl
 !lstm_model_*d.pth
+!exit_timing_model.pkl
 
 # Virtual environments
 venv_ml/

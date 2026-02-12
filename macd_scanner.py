@@ -73,6 +73,7 @@ class MACDScanner:
                 target_period=self.ml_target_period
             )
             self.ml_ensemble.load_models(xgb_path, lstm_path)
+            self.ml_ensemble.load_exit_model()  # Load exit timing model if available
             print(f"✅ ML models loaded ({self.ml_target_period}-day prediction, threshold: {self.ml_confidence_threshold:.0%})")
         except Exception as e:
             print(f"⚠️  Error loading ML models: {e}")
@@ -322,6 +323,12 @@ class MACDScanner:
                         result['ml_confidence'] = ml_result['ensemble_confidence']
                         result['ml_grade'] = ml_result['signal_grade']
                         result['signal'] = f"{signal} ({ml_result['ml_grade']})"  # Add grade to signal
+                        
+                        # Add exit recommendation if available
+                        if 'recommended_exit_day' in ml_result:
+                            result['recommended_exit_day'] = ml_result['recommended_exit_day']
+                            result['exit_range'] = ml_result['exit_range']
+                            result['exit_label'] = ml_result['exit_label']
                         
                         # Filter out low-confidence signals
                         if not ml_result['accept_signal']:

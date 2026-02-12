@@ -507,7 +507,10 @@ if 'results' in st.session_state and len(st.session_state['results']) > 0:
         'crossover_date': 'Crossover Date',
         'current_date': 'Current Date',
         'ml_confidence': 'ML Confidence',
-        'ml_grade': 'ML Grade'
+        'ml_grade': 'ML Grade',
+        'recommended_exit_day': 'Exit Day',
+        'exit_range': 'Exit Range',
+        'exit_label': 'Exit Strategy'
     }
     results = results.rename(columns=column_rename)
     
@@ -528,6 +531,8 @@ if 'results' in st.session_state and len(st.session_state['results']) > 0:
                        "Stop Loss", "Volume Ratio", "ADX", "RSI", "Price Change 5D %"]
         if 'ML Confidence' in results.columns:
             sort_options.insert(1, "ML Confidence")
+        if 'Exit Day' in results.columns:
+            sort_options.insert(2, "Exit Day")
         sort_by = st.selectbox("Sort by:", sort_options, key="sort_by")
     with col_sort2:
         sort_order = st.radio("Order:", ["Ascending", "Descending"], horizontal=True, key="sort_order")

@@ -142,8 +142,45 @@ class DataPreparation:
         """
         Label the signal with forward returns and profitability
         Returns dict with outcomes for different holding periods
+        Also tracks daily returns for optimal exit analysis
         """
         outcomes = {}
+        
+        # Track daily returns for days 1-20 (for optimal exit model)
+        max_exit_day = max(self.holding_periods)  # 20
+        daily_returns = {}
+        best_exit_day = None
+        best_exit_return = -float('inf')
+        
+        for day in range(1, max_exit_day + 1):
+            day_idx = entry_idx + day
+            if day_idx >= len(data):
+                break
+            
+            day_price = data.iloc[day_idx]['Close']
+            
+            if crossover_type == 1:  # Long
+                day_return = (day_price - entry_price) / entry_price * 100
+            else:  # Short
+                day_return = (entry_price - day_price) / entry_price * 100
+            
+            daily_returns[f'daily_return_d{day}'] = round(day_return, 4)
+            
+            # Track best exit day (best return above 0.5% to account for costs)
+            if day_return > best_exit_return:
+                best_exit_return = day_return
+                best_exit_day = day
+        
+        # Store optimal exit info
+        if best_exit_day is not None:
+            outcomes['optimal_exit_day'] = best_exit_day
+            outcomes['optimal_exit_return'] = round(best_exit_return, 2)
+        else:
+            outcomes['optimal_exit_day'] = None
+            outcomes['optimal_exit_return'] = None
+        
+        # Add daily returns to outcomes
+        outcomes.update(daily_returns)
         
         for period in self.holding_periods:
             exit_idx = entry_idx + period
