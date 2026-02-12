@@ -224,6 +224,15 @@ class MACDBacktester:
 
     # ── Summary statistics ──────────────────────────────────────────────
 
+    @staticmethod
+    def _buy_and_hold_return(price_data):
+        """Calculate buy-and-hold return over the entire price dataset."""
+        if len(price_data) < 2:
+            return 0.0
+        start_price = price_data['Close'].iloc[0]
+        end_price = price_data['Close'].iloc[-1]
+        return round((end_price - start_price) / start_price * 100, 2)
+
     def _empty_summary(self, ticker):
         return {
             'ticker': ticker,
@@ -247,6 +256,8 @@ class MACDBacktester:
             'avg_win': 0,
             'avg_loss': 0,
             'expectancy': 0,
+            'buy_hold_return': 0,
+            'alpha': 0,
         }
 
     def _compute_summary(self, df, ticker, price_data):
@@ -302,6 +313,8 @@ class MACDBacktester:
             'avg_win': round(avg_win, 2),
             'avg_loss': round(avg_loss, 2),
             'expectancy': round(expectancy, 2),
+            'buy_hold_return': self._buy_and_hold_return(price_data),
+            'alpha': round(total_return - self._buy_and_hold_return(price_data), 2),
         }
 
     @staticmethod

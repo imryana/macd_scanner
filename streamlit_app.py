@@ -813,6 +813,30 @@ if 'backtest_result' in st.session_state:
     if s['total_trades'] == 0:
         st.warning("No trades found in the selected period.")
     else:
+        # Buy & Hold comparison
+        bh = s.get('buy_hold_return', 0)
+        alpha = s.get('alpha', 0)
+        alpha_color = '#48bb78' if alpha >= 0 else '#fc8181'
+        st.markdown(f"""
+        <div style='display: flex; justify-content: center; gap: 2rem; margin-bottom: 1.5rem;'>
+            <div style='text-align: center; padding: 1rem 2rem; background: rgba(102, 126, 234, 0.12);
+                        border-radius: 10px; border: 1px solid rgba(102, 126, 234, 0.3);'>
+                <div style='color: #a0aec0; font-size: 0.85rem;'>Strategy Return</div>
+                <div style='color: #e2e8f0; font-size: 1.5rem; font-weight: 700;'>{s['total_return']}%</div>
+            </div>
+            <div style='text-align: center; padding: 1rem 2rem; background: rgba(102, 126, 234, 0.12);
+                        border-radius: 10px; border: 1px solid rgba(102, 126, 234, 0.3);'>
+                <div style='color: #a0aec0; font-size: 0.85rem;'>Buy & Hold Return</div>
+                <div style='color: #e2e8f0; font-size: 1.5rem; font-weight: 700;'>{bh}%</div>
+            </div>
+            <div style='text-align: center; padding: 1rem 2rem; background: rgba(102, 126, 234, 0.12);
+                        border-radius: 10px; border: 1px solid rgba(102, 126, 234, 0.3);'>
+                <div style='color: #a0aec0; font-size: 0.85rem;'>Alpha (Strategy − B&H)</div>
+                <div style='color: {alpha_color}; font-size: 1.5rem; font-weight: 700;'>{'+' if alpha >= 0 else ''}{alpha}%</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
         # Key metrics row
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Total Trades", s['total_trades'])
@@ -976,6 +1000,30 @@ if 'realistic_result' in st.session_state:
     if s['total_trades'] == 0:
         st.warning("No trades found in the selected period.")
     else:
+        # Buy & Hold comparison
+        bh = s.get('buy_hold_return', 0)
+        alpha = s.get('alpha', 0)
+        alpha_color = '#48bb78' if alpha >= 0 else '#fc8181'
+        st.markdown(f"""
+        <div style='display: flex; justify-content: center; gap: 2rem; margin-bottom: 1.5rem;'>
+            <div style='text-align: center; padding: 1rem 2rem; background: rgba(72, 187, 120, 0.12);
+                        border-radius: 10px; border: 1px solid rgba(72, 187, 120, 0.3);'>
+                <div style='color: #a0aec0; font-size: 0.85rem;'>Strategy Return</div>
+                <div style='color: #e2e8f0; font-size: 1.5rem; font-weight: 700;'>{s['total_return']}%</div>
+            </div>
+            <div style='text-align: center; padding: 1rem 2rem; background: rgba(72, 187, 120, 0.12);
+                        border-radius: 10px; border: 1px solid rgba(72, 187, 120, 0.3);'>
+                <div style='color: #a0aec0; font-size: 0.85rem;'>Buy & Hold Return</div>
+                <div style='color: #e2e8f0; font-size: 1.5rem; font-weight: 700;'>{bh}%</div>
+            </div>
+            <div style='text-align: center; padding: 1rem 2rem; background: rgba(72, 187, 120, 0.12);
+                        border-radius: 10px; border: 1px solid rgba(72, 187, 120, 0.3);'>
+                <div style='color: #a0aec0; font-size: 0.85rem;'>Alpha (Strategy − B&H)</div>
+                <div style='color: {alpha_color}; font-size: 1.5rem; font-weight: 700;'>{'+' if alpha >= 0 else ''}{alpha}%</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
         # Key metrics
         m1, m2, m3, m4, m5 = st.columns(5)
         m1.metric("Total Trades", s['total_trades'])
