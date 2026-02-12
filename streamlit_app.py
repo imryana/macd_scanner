@@ -875,6 +875,171 @@ if 'backtest_result' in st.session_state:
                                     file_name=f"backtest_{bt_ticker_display}_{datetime.now().strftime('%Y%m%d')}.csv",
                                     mime="text/csv")
 
+# ══════════════════════════════════════════════════════════════════════
+# RYAN'S POTENTIAL TRADING BEHAVIOUR BACK TEST
+# ══════════════════════════════════════════════════════════════════════
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center; padding: 1rem 0 2rem 0;'>
+    <h2 style='font-size: 2.5rem; margin-bottom: 0.5rem;'>🧠 Ryan's Potential Trading Behaviour Back Test</h2>
+    <p style='font-size: 1.1rem; color: #cbd5e0;'>
+        Simulates a realistic trader: 5-day hold, 1.5:1 R:R, exits near the peak — not at it
+    </p>
+</div>
+""", unsafe_allow_html=True)
+
+with st.expander("ℹ️ How this backtest works"):
+    st.markdown("""
+    **Entry:** Buy/short at close on the MACD crossover day.
+    
+    **Exit rules (checked daily over a 5-day max hold):**
+    1. **Stop Loss hit** → exit at SL price (default −5%)
+    2. **Take Profit hit** → exit at full TP price (default +7.5% at 1.5:1)
+    3. **After 5 days, neither hit:**
+       - If the trade moved favourably at some point, you **realistically capture ~65%** of the 
+         best intraday price reached (a real trader can't sell the exact peak)
+       - If the trade was never green, you exit at day-5 close (small loss / breakeven)
+    
+    **Why 65%?**  Studies on retail exit behaviour show traders typically capture 50-75% of 
+    max favorable excursion. 65% is a realistic middle estimate — you saw the move, waited a 
+    bit too long, then sold on a slight pullback from the high.
+    """)
+
+rt_col1, rt_col2 = st.columns([1, 1])
+with rt_col1:
+    rt_ticker = st.text_input("Stock Ticker", value="AAPL", max_chars=10, key="rt_ticker",
+                               help="Enter any stock symbol").upper().strip()
+    rt_period = st.selectbox("Lookback Period",
+                              options=["1y", "2y", "3y", "5y", "10y"],
+                              index=3, key="rt_period",
+                              format_func=lambda x: {"1y": "1 Year", "2y": "2 Years",
+                                                      "3y": "3 Years", "5y": "5 Years",
+                                                      "10y": "10 Years"}[x])
+with rt_col2:
+    rt_rr = st.number_input("Risk:Reward Ratio", min_value=0.5, max_value=5.0,
+                             value=1.5, step=0.1, key="rt_rr",
+                             help="Take profit = stop loss × this ratio")
+    rt_sl = st.number_input("Stop Loss %", min_value=1.0, max_value=15.0,
+                             value=5.0, step=0.5, key="rt_sl")
+
+rt_col3, rt_col4 = st.columns([1, 1])
+with rt_col3:
+    rt_capture = st.slider("Capture % of Peak Move", min_value=40, max_value=90,
+                            value=65, step=5, key="rt_capture",
+                            help="What fraction of the best price the trader realistically captures (65% = realistic)")
+with rt_col4:
+    rt_trade_type = st.selectbox("Trade Direction",
+                                  options=["both", "long", "short"], key="rt_direction",
+                                  format_func=lambda x: {"both": "Both Long & Short",
+                                                          "long": "Long Only",
+                                                          "short": "Short Only"}[x])
+
+rt_require_ema = st.checkbox("Require EMA-200 confirmation", value=False, key="rt_ema")
+
+if st.button("🧠 Run Realistic Backtest", type="primary", use_container_width=True):
+    if not rt_ticker:
+        st.error("Please enter a ticker symbol.")
+    else:
+        with st.spinner(f"Running realistic backtest on {rt_ticker}..."):
+            bt = MACDBacktester(
+                stop_loss_pct=rt_sl / 100,
+                risk_reward_ratio=rt_rr,
+                max_hold_days=5
+            )
+            result = bt.run_realistic(
+                rt_ticker,
+                period=rt_period,
+                trade_type=rt_trade_type,
+                require_ema200=rt_require_ema,
+                capture_pct=rt_capture / 100
+            )
+
+        if 'error' in result:
+            st.error(result['error'])
+        else:
+            st.session_state['realistic_result'] = result
+            st.session_state['realistic_ticker'] = rt_ticker
+
+# Display realistic backtest results
+if 'realistic_result' in st.session_state:
+    result = st.session_state['realistic_result']
+    s = result['summary']
+    rt_ticker_display = st.session_state.get('realistic_ticker', '')
+
+    st.markdown(f"""
+    <div style='text-align: center; padding: 1rem; background: rgba(72, 187, 120, 0.15);
+                border-radius: 10px; margin: 1rem 0; border: 2px solid rgba(72, 187, 120, 0.4);'>
+        <h3 style='color: #9ae6b4; margin: 0;'>🧠 Realistic Backtest: {rt_ticker_display}</h3>
+    </div>
+    """, unsafe_allow_html=True)
+
+    if s['total_trades'] == 0:
+        st.warning("No trades found in the selected period.")
+    else:
+        # Key metrics
+        m1, m2, m3, m4, m5 = st.columns(5)
+        m1.metric("Total Trades", s['total_trades'])
+        m2.metric("Win Rate", f"{s['win_rate']}%",
+                  delta=f"{s['win_rate'] - 50:.1f}% vs coin flip" if s['win_rate'] != 50 else None,
+                  delta_color="normal")
+        m3.metric("Total Return", f"{s['total_return']}%",
+                  delta_color="normal")
+        m4.metric("Profit Factor", f"{s['profit_factor']}")
+        m5.metric("Expectancy", f"{s['expectancy']}%/trade")
+
+        m6, m7, m8, m9 = st.columns(4)
+        m6.metric("Avg Win", f"+{s['avg_win']}%")
+        m7.metric("Avg Loss", f"{s['avg_loss']}%")
+        m8.metric("Best Trade", f"+{s['max_win']}%")
+        m9.metric("Worst Trade", f"{s['max_loss']}%")
+
+        # Exit breakdown specific to this mode
+        st.markdown("<h4 style='color: #9ae6b4; margin-top: 1.5rem;'>📈 Exit Breakdown</h4>", unsafe_allow_html=True)
+        e1, e2, e3, e4 = st.columns(4)
+        e1.metric("🎯 Full TP Hits", s['tp_hits'])
+        e2.metric("🛑 Stop Loss Hits", s['sl_hits'])
+        e3.metric("💰 Realistic TP Exits", s.get('realistic_tp_exits', 0))
+        e4.metric("⏰ Expired (Underwater)", s.get('expired_exits', 0))
+
+        d1, d2, d3, d4 = st.columns(4)
+        d1.metric("Long Trades", s['long_trades'])
+        d2.metric("Long Win Rate", f"{s['long_win_rate']}%")
+        d3.metric("Short Trades", s['short_trades'])
+        d4.metric("Short Win Rate", f"{s['short_win_rate']}%")
+
+        extra1, extra2 = st.columns(2)
+        extra1.metric("Avg Max Favorable Excursion", f"{s.get('avg_mfe', 0)}%",
+                      help="Average best move seen during the trade (before realistic exit)")
+        extra2.metric("Avg Hold Days", f"{s['avg_hold_days']}")
+
+        # Tabs
+        rt_tab1, rt_tab2 = st.tabs(["📈 Equity Curve", "📋 Trade Log"])
+
+        with rt_tab1:
+            equity = result['equity_curve']
+            if len(equity) > 1:
+                chart_data = equity.set_index('trade_num')['cumulative_return']
+                st.line_chart(chart_data, use_container_width=True)
+                st.caption("Cumulative return (%) after each trade")
+
+        with rt_tab2:
+            trades_df = result['trades']
+            if isinstance(trades_df, pd.DataFrame) and len(trades_df) > 0:
+                display_trades = trades_df.rename(columns={
+                    'entry_date': 'Entry Date', 'exit_date': 'Exit Date',
+                    'direction': 'Direction', 'entry_price': 'Entry',
+                    'stop_loss': 'SL', 'take_profit': 'TP',
+                    'exit_price': 'Exit', 'exit_reason': 'Exit Reason',
+                    'pnl_pct': 'P&L %', 'mfe_pct': 'Best Move %',
+                    'hold_days': 'Hold Days', 'rsi_at_entry': 'RSI'
+                })
+                st.dataframe(display_trades, use_container_width=True, hide_index=True, height=400)
+
+                csv = display_trades.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Download Realistic Trade Log", csv,
+                                    file_name=f"realistic_bt_{rt_ticker_display}_{datetime.now().strftime('%Y%m%d')}.csv",
+                                    mime="text/csv", key="rt_download")
+
 # Footer
 st.markdown("---")
 

@@ -322,6 +322,208 @@ class MACDBacktester:
             'cumulative_return': equity
         })
 
+    # ════════════════════════════════════════════════════════════════════
+    # Ryan's Potential Trading Behaviour Back Test
+    # ════════════════════════════════════════════════════════════════════
+
+    def run_realistic(self, ticker, start_date=None, end_date=None, period='5y',
+                      trade_type='both', require_ema200=False,
+                      capture_pct=0.65):
+        """
+        Realistic trader simulation over a 5-day max hold.
+
+        Exit logic (checked each day in order):
+          1. Stop Loss hit (intraday Low/High touches SL) → exit at SL price
+          2. Take Profit hit (intraday High/Low touches TP) → exit at TP price
+          3. After 5 days, if neither SL nor TP was hit:
+             - If the trade moved favourably at some point (max favorable excursion > 0),
+               the trader realistically captures ~capture_pct (default 65%) of the
+               best intraday price reached. A real trader can't pick the exact peak,
+               so this models selling "near" the high but not at it.
+             - If the trade never went green, exit at day-5 close (small loss / breakeven).
+
+        Args:
+            capture_pct: Fraction of max favorable excursion the trader captures (0.0-1.0).
+                         0.65 means the trader captures 65% of the best move.
+        """
+        stock = yf.Ticker(ticker)
+        if start_date:
+            data = stock.history(start=start_date, end=end_date)
+        else:
+            data = stock.history(period=period)
+
+        if len(data) < 200:
+            return {'error': f'Not enough data for {ticker} ({len(data)} bars, need 200+)'}
+
+        data = self._add_indicators(data)
+        data['Crossover'] = self._detect_crossovers(data)
+
+        trades = []
+        i = 0
+        indices = data.index.tolist()
+        max_hold = 5  # Fixed 5-day hold for this mode
+
+        while i < len(data):
+            row = data.iloc[i]
+            cross = row['Crossover']
+
+            if cross == 0:
+                i += 1
+                continue
+
+            direction = 'LONG' if cross == 1 else 'SHORT'
+            if trade_type == 'long' and direction == 'SHORT':
+                i += 1
+                continue
+            if trade_type == 'short' and direction == 'LONG':
+                i += 1
+                continue
+
+            if require_ema200:
+                if direction == 'LONG' and row['Close'] < row['EMA_200']:
+                    i += 1
+                    continue
+                if direction == 'SHORT' and row['Close'] > row['EMA_200']:
+                    i += 1
+                    continue
+
+            entry_price = row['Close']
+            entry_date = indices[i]
+
+            if direction == 'LONG':
+                stop_loss = entry_price * (1 - self.stop_loss_pct)
+                take_profit = entry_price * (1 + self.stop_loss_pct * self.risk_reward_ratio)
+            else:
+                stop_loss = entry_price * (1 + self.stop_loss_pct)
+                take_profit = entry_price * (1 - self.stop_loss_pct * self.risk_reward_ratio)
+
+            # ── Day-by-day simulation ──
+            exit_price = None
+            exit_date = None
+            exit_reason = None
+            best_favorable_price = entry_price  # track MFE
+
+            end_j = min(i + 1 + max_hold, len(data))
+
+            for j in range(i + 1, end_j):
+                day = data.iloc[j]
+
+                if direction == 'LONG':
+                    # Track best high seen so far
+                    if day['High'] > best_favorable_price:
+                        best_favorable_price = day['High']
+
+                    # SL check first (conservative)
+                    if day['Low'] <= stop_loss:
+                        exit_price = stop_loss
+                        exit_date = indices[j]
+                        exit_reason = 'Stop Loss'
+                        break
+                    # TP check
+                    if day['High'] >= take_profit:
+                        exit_price = take_profit
+                        exit_date = indices[j]
+                        exit_reason = 'Take Profit'
+                        break
+                else:  # SHORT
+                    # Track best low seen so far
+                    if day['Low'] < best_favorable_price:
+                        best_favorable_price = day['Low']
+
+                    if day['High'] >= stop_loss:
+                        exit_price = stop_loss
+                        exit_date = indices[j]
+                        exit_reason = 'Stop Loss'
+                        break
+                    if day['Low'] <= take_profit:
+                        exit_price = take_profit
+                        exit_date = indices[j]
+                        exit_reason = 'Take Profit'
+                        break
+
+            # ── End of hold period – realistic exit ──
+            if exit_price is None:
+                last_j = min(i + max_hold, len(data) - 1)
+                exit_date = indices[last_j]
+
+                if direction == 'LONG':
+                    max_move = best_favorable_price - entry_price
+                    if max_move > 0:
+                        # Trader captures capture_pct of the best high
+                        exit_price = entry_price + (max_move * capture_pct)
+                        exit_reason = 'Realistic TP'
+                    else:
+                        exit_price = data.iloc[last_j]['Close']
+                        exit_reason = 'Expired'
+                else:  # SHORT
+                    max_move = entry_price - best_favorable_price
+                    if max_move > 0:
+                        exit_price = entry_price - (max_move * capture_pct)
+                        exit_reason = 'Realistic TP'
+                    else:
+                        exit_price = data.iloc[last_j]['Close']
+                        exit_reason = 'Expired'
+
+            # P&L
+            if direction == 'LONG':
+                pnl_pct = (exit_price - entry_price) / entry_price * 100
+            else:
+                pnl_pct = (entry_price - exit_price) / entry_price * 100
+
+            # Max favorable excursion % (for reporting)
+            if direction == 'LONG':
+                mfe_pct = (best_favorable_price - entry_price) / entry_price * 100
+            else:
+                mfe_pct = (entry_price - best_favorable_price) / entry_price * 100
+
+            trades.append({
+                'entry_date': entry_date.strftime('%Y-%m-%d'),
+                'exit_date': exit_date.strftime('%Y-%m-%d'),
+                'direction': direction,
+                'entry_price': round(entry_price, 2),
+                'stop_loss': round(stop_loss, 2),
+                'take_profit': round(take_profit, 2),
+                'exit_price': round(exit_price, 2),
+                'exit_reason': exit_reason,
+                'pnl_pct': round(pnl_pct, 2),
+                'mfe_pct': round(mfe_pct, 2),
+                'hold_days': (exit_date - entry_date).days,
+                'rsi_at_entry': round(row['RSI'], 2) if not np.isnan(row['RSI']) else None,
+            })
+
+            exit_idx = indices.index(exit_date)
+            i = exit_idx + 1
+
+        # ── Summary ──
+        if not trades:
+            summary = self._empty_summary(ticker)
+            summary['realistic_tp_exits'] = 0
+            summary['expired_exits'] = 0
+            summary['avg_mfe'] = 0
+            return {
+                'ticker': ticker,
+                'trades': [],
+                'summary': summary,
+                'equity_curve': pd.DataFrame()
+            }
+
+        trades_df = pd.DataFrame(trades)
+        summary = self._compute_summary(trades_df, ticker, data)
+        # Replace max_hold_exits with the two new categories
+        summary['realistic_tp_exits'] = int((trades_df['exit_reason'] == 'Realistic TP').sum())
+        summary['expired_exits'] = int((trades_df['exit_reason'] == 'Expired').sum())
+        summary['avg_mfe'] = round(trades_df['mfe_pct'].mean(), 2)
+        # Recalculate max_hold_exits to 0 (not used in this mode)
+        summary['max_hold_exits'] = 0
+        equity = self._build_equity_curve(trades_df)
+
+        return {
+            'ticker': ticker,
+            'trades': trades_df,
+            'summary': summary,
+            'equity_curve': equity
+        }
+
 
 if __name__ == '__main__':
     bt = MACDBacktester(stop_loss_pct=0.05, risk_reward_ratio=1.5, max_hold_days=20)
