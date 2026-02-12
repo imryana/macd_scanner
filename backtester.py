@@ -154,9 +154,91 @@ class MACDBacktester:
 
     # ── Core backtest ───────────────────────────────────────────────────
 
+    def _check_signal_quality(self, data, i, direction):
+        """
+        Check if indicator conditions confirm the crossover signal.
+        Mirrors MACDScanner.generate_signal() logic.
+
+        Returns signal string ('STRONG LONG', 'LONG', 'STRONG SHORT', 'SHORT')
+        or None if conditions are not met.
+        """
+        row = data.iloc[i]
+        prev_hist = data.iloc[i - 1]['Histogram'] if i > 0 else 0
+
+        macd_above_zero = row['MACD'] > 0
+        crossover_above_zero = row['MACD'] > 0  # Crossover MACD value
+        histogram_increasing = row['Histogram'] > prev_hist
+
+        # EMA-200
+        price_above_ema200 = True
+        if not np.isnan(row.get('EMA_200', np.nan)):
+            price_above_ema200 = row['Close'] > row['EMA_200']
+
+        # RSI
+        rsi = row.get('RSI', 50)
+        if np.isnan(rsi):
+            rsi = 50
+        rsi_bullish = 30 < rsi < 70
+        rsi_oversold = rsi < 35
+        rsi_overbought = rsi > 65
+
+        # ADX
+        adx = row.get('ADX', 25)
+        if np.isnan(adx):
+            adx = 25
+        strong_trend = adx > 25
+        moderate_trend = adx > 20
+
+        # Bollinger Bands
+        bb_position = row.get('BB_PercentB', 0.5)
+        if np.isnan(bb_position):
+            bb_position = 0.5
+        bb_oversold = bb_position < 0.2
+        bb_overbought = bb_position > 0.8
+        bb_neutral = 0.3 < bb_position < 0.7
+
+        if direction == 'LONG':
+            if (crossover_above_zero and price_above_ema200 and
+                    strong_trend and rsi_bullish and not bb_overbought):
+                return 'STRONG LONG'
+            elif (crossover_above_zero and price_above_ema200 and
+                  (rsi_oversold or bb_oversold) and moderate_trend):
+                return 'STRONG LONG'
+            elif (crossover_above_zero and price_above_ema200 and
+                  rsi < 70 and moderate_trend):
+                return 'LONG'
+            elif (not crossover_above_zero and price_above_ema200 and
+                  strong_trend and rsi_oversold and bb_oversold):
+                return 'LONG'
+            elif (price_above_ema200 and rsi_bullish and
+                  (moderate_trend or histogram_increasing) and bb_neutral):
+                return 'LONG'
+            return None
+
+        elif direction == 'SHORT':
+            if (not crossover_above_zero and not price_above_ema200 and
+                    strong_trend and rsi_bullish and not bb_oversold):
+                return 'STRONG SHORT'
+            elif (not crossover_above_zero and not price_above_ema200 and
+                  (rsi_overbought or bb_overbought) and moderate_trend):
+                return 'STRONG SHORT'
+            elif (not crossover_above_zero and not price_above_ema200 and
+                  rsi > 30 and moderate_trend):
+                return 'SHORT'
+            elif (crossover_above_zero and not price_above_ema200 and
+                  strong_trend and rsi_overbought and bb_overbought):
+                return 'SHORT'
+            elif (not price_above_ema200 and rsi_bullish and
+                  (moderate_trend or not histogram_increasing) and bb_neutral):
+                return 'SHORT'
+            return None
+
+        return None
+
     def run(self, ticker, start_date=None, end_date=None, period='5y', 
             trade_type='both', require_ema200=False,
-            ml_predictor=None, min_ml_grade=None, entry_delay=0):
+            ml_predictor=None, min_ml_grade=None, entry_delay=0,
+            require_confirmation=False):
         """
         Run backtest on a single ticker.
 
@@ -168,6 +250,9 @@ class MACDBacktester:
             trade_type: 'long', 'short', or 'both'
             require_ema200: If True, only take longs above EMA-200 / shorts below
             ml_predictor: Optional EnsemblePredictor instance for ML confidence filtering
+            min_ml_grade: Minimum ML grade to enter trade ('D', 'C', 'B', 'A', 'A+')
+            entry_delay: Days to wait after crossover before entering (0 = enter same day)
+            require_confirmation: If True, require RSI/ADX/BB/EMA-200 confirmation
             min_ml_grade: Minimum ML grade to enter trade ('D', 'C', 'B', 'A', 'A+')
             entry_delay: Days to wait after crossover before entering (0 = enter same day)
 
@@ -207,6 +292,14 @@ class MACDBacktester:
             if trade_type == 'short' and direction == 'LONG':
                 i += 1
                 continue
+
+            # Multi-indicator confirmation filter
+            signal_quality = None
+            if require_confirmation:
+                signal_quality = self._check_signal_quality(data, i, direction)
+                if signal_quality is None:
+                    i += 1
+                    continue
 
             # EMA-200 filter
             if require_ema200:
@@ -310,6 +403,7 @@ class MACDBacktester:
                 'macd_at_entry': round(row['MACD'], 4),
                 'rsi_at_entry': round(row['RSI'], 2) if not np.isnan(row['RSI']) else None,
                 'ml_grade': ml_grade,
+                'signal_quality': signal_quality,
                 'entry_delay_days': entry_delay,
             })
 
@@ -457,7 +551,8 @@ class MACDBacktester:
     def run_realistic(self, ticker, start_date=None, end_date=None, period='5y',
                       trade_type='both', require_ema200=False,
                       capture_pct=0.65,
-                      ml_predictor=None, min_ml_grade=None, entry_delay=0):
+                      ml_predictor=None, min_ml_grade=None, entry_delay=0,
+                      require_confirmation=False):
         """
         Realistic trader simulation over a 5-day max hold.
 
@@ -477,6 +572,7 @@ class MACDBacktester:
             ml_predictor: Optional EnsemblePredictor instance for ML confidence filtering
             min_ml_grade: Minimum ML grade to enter trade ('D', 'C', 'B', 'A', 'A+')
             entry_delay: Days to wait after crossover before entering (0 = enter same day)
+            require_confirmation: If True, require RSI/ADX/BB/EMA-200 confirmation
         """
         stock = yf.Ticker(ticker)
         if start_date:
@@ -510,6 +606,14 @@ class MACDBacktester:
             if trade_type == 'short' and direction == 'LONG':
                 i += 1
                 continue
+
+            # Multi-indicator confirmation filter
+            signal_quality = None
+            if require_confirmation:
+                signal_quality = self._check_signal_quality(data, i, direction)
+                if signal_quality is None:
+                    i += 1
+                    continue
 
             if require_ema200:
                 if direction == 'LONG' and row['Close'] < row['EMA_200']:
@@ -644,6 +748,7 @@ class MACDBacktester:
                 'hold_days': (exit_date - entry_date).days,
                 'rsi_at_entry': round(row['RSI'], 2) if not np.isnan(row['RSI']) else None,
                 'ml_grade': ml_grade,
+                'signal_quality': signal_quality,
             })
 
             exit_idx = indices.index(exit_date)

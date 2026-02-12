@@ -790,6 +790,11 @@ with bt_col4:
 bt_require_ema = st.checkbox("Require EMA-200 confirmation", value=False,
                               help="Only take longs above EMA-200, shorts below")
 
+bt_require_confirmation = st.checkbox("✅ Require full indicator confirmation (RSI + ADX + BB + EMA-200)", value=True,
+                                       help="Only enter trades when RSI, ADX, Bollinger Bands and EMA-200 all confirm "
+                                            "the signal — the same logic the live scanner uses. Disabling this enters "
+                                            "on every raw MACD crossover.")
+
 bt_col5, bt_col6 = st.columns([1, 1])
 with bt_col5:
     bt_ml_grade = st.selectbox("Min ML Confidence Grade",
@@ -828,7 +833,8 @@ if st.button("📊 Run Backtest", type="primary", use_container_width=True):
                 require_ema200=bt_require_ema,
                 ml_predictor=bt_ml_pred,
                 min_ml_grade=bt_ml_min,
-                entry_delay=bt_entry_delay
+                entry_delay=bt_entry_delay,
+                require_confirmation=bt_require_confirmation
             )
         
         if 'error' in result:
@@ -940,13 +946,16 @@ if 'backtest_result' in st.session_state:
                     'stop_loss': 'SL', 'take_profit': 'TP',
                     'exit_price': 'Exit', 'exit_reason': 'Exit Reason',
                     'pnl_pct': 'P&L %', 'hold_days': 'Hold Days',
-                    'rsi_at_entry': 'RSI', 'ml_grade': 'ML Grade'
+                    'rsi_at_entry': 'RSI', 'ml_grade': 'ML Grade',
+                    'signal_quality': 'Signal'
                 })
                 # Drop internal columns and columns that are all None
                 drop_cols = [c for c in ['macd_at_entry', 'entry_delay_days'] if c in display_trades.columns]
                 display_trades = display_trades.drop(columns=drop_cols, errors='ignore')
                 if 'ML Grade' in display_trades.columns and display_trades['ML Grade'].isna().all():
                     display_trades = display_trades.drop(columns=['ML Grade'])
+                if 'Signal' in display_trades.columns and display_trades['Signal'].isna().all():
+                    display_trades = display_trades.drop(columns=['Signal'])
                 if 'RSI' in display_trades.columns:
                     display_trades['RSI'] = display_trades['RSI'].fillna('-')
                 st.dataframe(display_trades, use_container_width=True, hide_index=True, height=400)
@@ -1018,6 +1027,12 @@ with rt_col4:
 
 rt_require_ema = st.checkbox("Require EMA-200 confirmation", value=False, key="rt_ema")
 
+rt_require_confirmation = st.checkbox("✅ Require full indicator confirmation (RSI + ADX + BB + EMA-200)", value=True,
+                                       key="rt_confirm",
+                                       help="Only enter trades when RSI, ADX, Bollinger Bands and EMA-200 all confirm "
+                                            "the signal — the same logic the live scanner uses. Disabling this enters "
+                                            "on every raw MACD crossover.")
+
 rt_col5, rt_col6 = st.columns([1, 1])
 with rt_col5:
     rt_ml_grade = st.selectbox("Min ML Confidence Grade",
@@ -1058,7 +1073,8 @@ if st.button("🧠 Run Realistic Backtest", type="primary", use_container_width=
                 capture_pct=rt_capture / 100,
                 ml_predictor=rt_ml_pred,
                 min_ml_grade=rt_ml_min,
-                entry_delay=rt_entry_delay
+                entry_delay=rt_entry_delay,
+                require_confirmation=rt_require_confirmation
             )
 
         if 'error' in result:
@@ -1175,11 +1191,13 @@ if 'realistic_result' in st.session_state:
                     'exit_price': 'Exit', 'exit_reason': 'Exit Reason',
                     'pnl_pct': 'P&L %', 'mfe_pct': 'Best Move %',
                     'hold_days': 'Hold Days', 'rsi_at_entry': 'RSI',
-                    'ml_grade': 'ML Grade'
+                    'ml_grade': 'ML Grade', 'signal_quality': 'Signal'
                 })
                 # Drop columns that are all None or internal
                 if 'ML Grade' in display_trades.columns and display_trades['ML Grade'].isna().all():
                     display_trades = display_trades.drop(columns=['ML Grade'])
+                if 'Signal' in display_trades.columns and display_trades['Signal'].isna().all():
+                    display_trades = display_trades.drop(columns=['Signal'])
                 if 'RSI' in display_trades.columns:
                     display_trades['RSI'] = display_trades['RSI'].fillna('-')
                 st.dataframe(display_trades, use_container_width=True, hide_index=True, height=400)
