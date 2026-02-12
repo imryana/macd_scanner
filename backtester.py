@@ -90,8 +90,8 @@ class MACDBacktester:
         else:
             data = stock.history(period=period)
 
-        if len(data) < 200:
-            return {'error': f'Not enough data for {ticker} ({len(data)} bars, need 200+)'}
+        if len(data) < 50:
+            return {'error': f'Not enough data for {ticker} ({len(data)} bars, need 50+)'}
 
         data = self._add_indicators(data)
         data['Crossover'] = self._detect_crossovers(data)
@@ -365,8 +365,8 @@ class MACDBacktester:
         else:
             data = stock.history(period=period)
 
-        if len(data) < 200:
-            return {'error': f'Not enough data for {ticker} ({len(data)} bars, need 200+)'}
+        if len(data) < 50:
+            return {'error': f'Not enough data for {ticker} ({len(data)} bars, need 50+)'}
 
         data = self._add_indicators(data)
         data['Crossover'] = self._detect_crossovers(data)

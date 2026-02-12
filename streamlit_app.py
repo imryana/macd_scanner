@@ -744,9 +744,10 @@ with bt_col1:
     bt_ticker = st.text_input("Stock Ticker", value="AAPL", max_chars=10,
                                help="Enter any stock symbol (e.g. AAPL, MSFT, TSLA)").upper().strip()
     bt_period = st.selectbox("Lookback Period", 
-                              options=["1y", "2y", "3y", "5y", "10y"],
-                              index=3,
-                              format_func=lambda x: {"1y": "1 Year", "2y": "2 Years", 
+                              options=["3mo", "6mo", "1y", "2y", "3y", "5y", "10y"],
+                              index=5,
+                              format_func=lambda x: {"3mo": "3 Months", "6mo": "6 Months",
+                                                      "1y": "1 Year", "2y": "2 Years", 
                                                       "3y": "3 Years", "5y": "5 Years",
                                                       "10y": "10 Years"}[x])
 
@@ -934,9 +935,10 @@ with rt_col1:
     rt_ticker = st.text_input("Stock Ticker", value="AAPL", max_chars=10, key="rt_ticker",
                                help="Enter any stock symbol").upper().strip()
     rt_period = st.selectbox("Lookback Period",
-                              options=["1y", "2y", "3y", "5y", "10y"],
-                              index=3, key="rt_period",
-                              format_func=lambda x: {"1y": "1 Year", "2y": "2 Years",
+                              options=["3mo", "6mo", "1y", "2y", "3y", "5y", "10y"],
+                              index=5, key="rt_period",
+                              format_func=lambda x: {"3mo": "3 Months", "6mo": "6 Months",
+                                                      "1y": "1 Year", "2y": "2 Years",
                                                       "3y": "3 Years", "5y": "5 Years",
                                                       "10y": "10 Years"}[x])
 with rt_col2:
