@@ -166,14 +166,14 @@ class ModelTrainingPipeline:
         
         return ensemble
     
-    def run_full_pipeline(self, tickers=None, lookback='3y', target_period=5, 
+    def run_full_pipeline(self, tickers=None, lookback='10y', target_period=5, 
                          optimize_xgboost=False, lstm_epochs=50):
         """
         Run complete training pipeline
         
         Args:
             tickers: List of tickers (None = default set)
-            lookback: Historical period for data collection
+            lookback: Historical period for data collection (default: 10y)
             target_period: Which holding period to train for
             optimize_xgboost: Run hyperparameter optimization
             lstm_epochs: LSTM training epochs
@@ -281,10 +281,10 @@ def quick_start():
     
     if choice == '1':
         print("\n🚀 Quick Test Mode Selected")
-        print("   Using 30 stocks, 3-year history")
+        print("   Using 30 stocks, 10-year history")
         results = pipeline.run_full_pipeline(
             tickers=None,  # Default 30 stocks
-            lookback='3y',
+            lookback='10y',
             target_period=5,
             optimize_xgboost=False,
             lstm_epochs=50
@@ -294,10 +294,10 @@ def quick_start():
         print("\n🚀 Full Training Mode Selected")
         prep = DataPreparation()
         all_tickers = prep.load_sp500_tickers()
-        print(f"   Using {len(all_tickers)} S&P 500 stocks")
+        print(f"   Using {len(all_tickers)} S&P 500 stocks, 10-year history")
         results = pipeline.run_full_pipeline(
             tickers=all_tickers,
-            lookback='3y',
+            lookback='10y',
             target_period=5,
             optimize_xgboost=True,  # Full optimization
             lstm_epochs=100
@@ -306,7 +306,7 @@ def quick_start():
     elif choice == '3':
         print("\n🚀 Custom Training Mode")
         use_sp500 = input("Use full S&P 500? (y/n): ").lower() == 'y'
-        lookback = input("Lookback period (1y/3y/5y) [3y]: ").strip() or '3y'
+        lookback = input("Lookback period (3y/5y/10y/max) [10y]: ").strip() or '10y'
         target = int(input("Target period (5/10/20 days) [5]: ").strip() or '5')
         epochs = int(input("LSTM epochs [50]: ").strip() or '50')
         

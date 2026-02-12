@@ -380,6 +380,11 @@ use_ml = st.sidebar.checkbox("Enable ML Filtering", value=True,
 ml_confidence = st.sidebar.slider("ML Confidence Threshold", 
                                   min_value=0.5, max_value=0.95, value=0.65, step=0.05,
                                   help="Minimum confidence to show signals (higher = more selective)")
+ml_target_period = st.sidebar.selectbox("ML Holding Period",
+                                        options=[5, 10, 20],
+                                        index=0,
+                                        format_func=lambda x: f"{x} days",
+                                        help="Prediction horizon — must match a trained model (e.g. xgboost_model_5d.pkl)")
 
 st.sidebar.markdown("---")
 
@@ -391,7 +396,7 @@ st.sidebar.markdown(f"{'✅' if use_rsi else '❌'} RSI")
 st.sidebar.markdown(f"{'✅' if use_adx else '❌'} ADX")
 st.sidebar.markdown(f"{'✅' if use_bollinger else '❌'} Bollinger Bands")
 st.sidebar.markdown(f"{'✅' if use_ema200 else '❌'} EMA-200")
-st.sidebar.markdown(f"{'🤖' if use_ml else '❌'} ML Filter (Confidence: {ml_confidence*100:.0f}%)")
+st.sidebar.markdown(f"{'🤖' if use_ml else '❌'} ML Filter ({ml_target_period}d, {ml_confidence*100:.0f}% conf)")
 
 # Main content
 col1, col2 = st.columns([2, 1])
@@ -413,7 +418,8 @@ with col1:
                 use_bollinger=use_bollinger,
                 use_ema200=use_ema200,
                 use_ml_filter=use_ml,
-                ml_confidence_threshold=ml_confidence
+                ml_confidence_threshold=ml_confidence,
+                ml_target_period=ml_target_period
             )
         
         # Scan all S&P 500 stocks
