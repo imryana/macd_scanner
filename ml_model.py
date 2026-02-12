@@ -56,9 +56,10 @@ class MACDXGBoostModel:
         if 'volume_ratio_20d' in X.columns and 'returns_1d' in X.columns:
             X['volume_momentum'] = X['volume_ratio_20d'] * X['returns_1d']
         
-        # Add crossover type back as feature
-        X['is_bullish'] = (df['crossover_type'] == 1).astype(int)
-        X['is_bearish'] = (df['crossover_type'] == -1).astype(int)
+        # Note: crossover_type is excluded above but we keep it as a feature
+        # via the original column. We do NOT add is_bullish/is_bearish dummies
+        # because they dominate feature importance and prevent the model from
+        # learning actual signal quality patterns.
         
         self.feature_names = X.columns.tolist()
         
@@ -137,18 +138,21 @@ class MACDXGBoostModel:
             print("\n🚀 Training with default parameters...")
             
             self.model = xgb.XGBClassifier(
-                n_estimators=200,
-                max_depth=6,
-                learning_rate=0.05,
-                min_child_weight=3,
-                subsample=0.9,
-                colsample_bytree=0.9,
+                n_estimators=300,
+                max_depth=4,
+                learning_rate=0.03,
+                min_child_weight=5,
+                subsample=0.7,
+                colsample_bytree=0.7,
+                gamma=1.0,
+                reg_alpha=0.1,
+                reg_lambda=5.0,
                 scale_pos_weight=scale_pos_weight,
                 objective='binary:logistic',
                 random_state=42,
                 eval_metric='auc',
-                tree_method='hist',  # CPU-optimized histogram method
-                n_jobs=-1  # Use all CPU cores
+                tree_method='hist',
+                n_jobs=-1
             )
             
             # Train with early stopping
@@ -230,11 +234,7 @@ class MACDXGBoostModel:
         # Add interaction features
         X['macd_rsi_interaction'] = X.get('macd_value', 0) * X.get('rsi', 50)
         X['adx_di_interaction'] = X.get('adx', 20) * X.get('di_diff', 0)
-        X['volume_momentum'] = X.get('volume_ratio_20d', 1) * X.get('returns_5d', 0)
-        
-        # Add crossover type features
-        X['is_bullish'] = 1 if features_dict.get('crossover_type', 0) == 1 else 0
-        X['is_bearish'] = 1 if features_dict.get('crossover_type', 0) == -1 else 0
+        X['volume_momentum'] = X.get('volume_ratio_20d', 1) * X.get('returns_1d', 0)
         
         # Ensure all features are present
         for feature in self.feature_names:

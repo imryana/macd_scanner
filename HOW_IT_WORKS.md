@@ -206,7 +206,7 @@ When enabled, every signal that passes the rule-based filter is further evaluate
 
 Two types of features are extracted at each crossover point:
 
-#### Snapshot Features (for XGBoost) — 33 features
+#### Snapshot Features (for XGBoost) — 31 features
 
 A flat dictionary of values at the moment of crossover:
 
@@ -216,7 +216,7 @@ A flat dictionary of values at the moment of crossover:
 | **RSI** | rsi value, oversold/overbought/neutral flags, rsi_slope (5-day) |
 | **ADX** | adx value, +DI, −DI, di_diff, adx_strong flag |
 | **Price** | close price, distance from EMA-200 (%), above_ema200 flag, returns over 1/5/10/20 days |
-| **Volume** | raw volume, volume_ratio_20d, volume_trend flag |
+| **Volume** | volume_ratio_20d, volume_trend flag |
 | **Bollinger** | %B position, bandwidth, bb_squeeze flag |
 | **Volatility** | 10-day and 20-day price volatility |
 | **Context** | crossover_type (bullish=1, bearish=−1) |
@@ -273,7 +273,7 @@ Input (30 × 8) → LSTM (2 layers, 128 hidden) → Attention → FC(64) → FC(
   - 2-layer LSTM with 128 hidden units and 0.3 dropout
   - Attention mechanism that learns which days in the 30-day window matter most
   - Fully connected head: 128 → 64 → 32 → 1 with ReLU, dropout, and sigmoid output
-- **Training:** Adam optimizer, BCELoss, ReduceLROnPlateau scheduler, gradient clipping (max norm 1.0), early stopping (patience 10)
+- **Training:** Adam optimizer (lr=0.0005, weight decay=1e-5), BCEWithLogitsLoss with class-imbalance pos_weight, ReduceLROnPlateau scheduler, gradient clipping (max norm 1.0), early stopping (patience 10)
 - **GPU accelerated:** Automatically uses CUDA if available
 
 **Why LSTM with Attention:** Captures temporal patterns — rising MACD momentum over several days, volume buildups, RSI divergences — that a snapshot-based model would miss. The attention mechanism lets it focus on the most relevant days (e.g., the 2–3 days leading up to the crossover).

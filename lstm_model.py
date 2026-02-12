@@ -68,7 +68,7 @@ class MACDLSTMModel(nn.Module):
             nn.Linear(hidden_size // 2, 1)
         )
         
-        # Fully connected layers
+        # Fully connected layers (no sigmoid - using BCEWithLogitsLoss)
         self.fc = nn.Sequential(
             nn.Linear(hidden_size, 64),
             nn.ReLU(),
@@ -76,8 +76,7 @@ class MACDLSTMModel(nn.Module):
             nn.Linear(64, 32),
             nn.ReLU(),
             nn.Dropout(dropout * 0.5),
-            nn.Linear(32, 1),
-            nn.Sigmoid()
+            nn.Linear(32, 1)
         )
         
     def apply_attention(self, lstm_output):
@@ -151,9 +150,9 @@ class LSTMTrainer:
             dropout=dropout
         ).to(self.device)
         
-        # Loss and optimizer
-        self.criterion = nn.BCELoss()
-        self.optimizer = optim.Adam(self.model.parameters(), lr=0.001)
+        # Loss and optimizer (pos_weight computed in prepare_sequences)
+        self.criterion = nn.BCEWithLogitsLoss()  # Will override with pos_weight later
+        self.optimizer = optim.Adam(self.model.parameters(), lr=0.0005, weight_decay=1e-5)
         self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(
             self.optimizer, mode='min', factor=0.5, patience=5
         )
@@ -231,15 +230,22 @@ class LSTMTrainer:
         print(f"   Validation: {len(X_val)} samples ({y_val.mean()*100:.1f}% positive)")
         print(f"   Testing:    {len(X_test)} samples ({y_test.mean()*100:.1f}% positive)")
         
+        # Handle class imbalance with pos_weight
+        n_neg = (y_train == 0).sum()
+        n_pos = (y_train == 1).sum()
+        pos_weight = torch.tensor([n_neg / n_pos], dtype=torch.float32).to(self.device)
+        self.criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+        print(f"   Class balance - pos_weight: {pos_weight.item():.3f}")
+        
         # Create datasets
         train_dataset = TradingSequenceDataset(X_train, y_train)
         val_dataset = TradingSequenceDataset(X_val, y_val)
         test_dataset = TradingSequenceDataset(X_test, y_test)
         
-        # Create dataloaders
-        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=32, shuffle=False)
-        test_loader = DataLoader(test_dataset, batch_size=32, shuffle=False)
+        # Create dataloaders (larger batch for stability)
+        train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=128, shuffle=False)
+        test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False)
         
         return train_loader, val_loader, test_loader
     
@@ -266,8 +272,9 @@ class LSTMTrainer:
             
             total_loss += loss.item()
             
-            # Store predictions for metrics
-            all_preds.extend(outputs.detach().cpu().numpy())
+            # Store predictions (apply sigmoid for metrics since model outputs logits now)
+            probs = torch.sigmoid(outputs).detach().cpu().numpy()
+            all_preds.extend(probs)
             all_labels.extend(labels.cpu().numpy())
         
         avg_loss = total_loss / len(train_loader)
@@ -292,7 +299,8 @@ class LSTMTrainer:
                 loss = self.criterion(outputs, labels)
                 
                 total_loss += loss.item()
-                all_preds.extend(outputs.cpu().numpy())
+                probs = torch.sigmoid(outputs).cpu().numpy()
+                all_preds.extend(probs)
                 all_labels.extend(labels.cpu().numpy())
         
         avg_loss = total_loss / len(val_loader)
@@ -375,8 +383,9 @@ class LSTMTrainer:
             for sequences, labels in test_loader:
                 sequences = sequences.to(self.device)
                 outputs = self.model(sequences)
+                probs = torch.sigmoid(outputs)
                 
-                all_preds.extend(outputs.cpu().numpy())
+                all_preds.extend(probs.cpu().numpy())
                 all_labels.extend(labels.numpy())
         
         all_preds = np.array(all_preds)
@@ -421,8 +430,9 @@ class LSTMTrainer:
         
         with torch.no_grad():
             output = self.model(sequence_tensor)
+            prob = torch.sigmoid(output)
         
-        return float(output.cpu().numpy())
+        return float(prob.cpu().numpy())
     
     def plot_training_history(self, save_path='lstm_training_history.png'):
         """Plot training history"""
