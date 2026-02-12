@@ -54,6 +54,29 @@ class MACDBacktester:
         rs = gain / loss.replace(0, np.nan)
         df['RSI'] = 100 - (100 / (1 + rs))
 
+        # ADX (14-period)
+        high, low, close = df['High'], df['Low'], df['Close']
+        plus_dm = high.diff()
+        minus_dm = -low.diff()
+        plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
+        minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
+        tr = pd.concat([high - low,
+                        (high - close.shift()).abs(),
+                        (low - close.shift()).abs()], axis=1).max(axis=1)
+        atr14 = tr.ewm(span=14, adjust=False).mean()
+        df['Plus_DI'] = 100 * plus_dm.ewm(span=14, adjust=False).mean() / atr14
+        df['Minus_DI'] = 100 * minus_dm.ewm(span=14, adjust=False).mean() / atr14
+        dx = 100 * (df['Plus_DI'] - df['Minus_DI']).abs() / (df['Plus_DI'] + df['Minus_DI']).replace(0, np.nan)
+        df['ADX'] = dx.ewm(span=14, adjust=False).mean()
+
+        # Bollinger Bands (20, 2)
+        sma20 = close.rolling(20).mean()
+        std20 = close.rolling(20).std()
+        upper_bb = sma20 + 2 * std20
+        lower_bb = sma20 - 2 * std20
+        df['BB_PercentB'] = (close - lower_bb) / (upper_bb - lower_bb)
+        df['BB_Bandwidth'] = (upper_bb - lower_bb) / sma20
+
         return df
 
     def _detect_crossovers(self, df):
@@ -65,10 +88,75 @@ class MACDBacktester:
         cross[bearish] = -1
         return cross
 
+    # ── ML confidence grading ───────────────────────────────────────────
+
+    GRADE_ORDER = {'F': 0, 'D': 1, 'C': 2, 'B': 3, 'A': 4, 'A+': 5}
+
+    @staticmethod
+    def _grade_meets_minimum(grade, min_grade):
+        """Check if a signal grade meets the minimum threshold."""
+        order = MACDBacktester.GRADE_ORDER
+        return order.get(grade, 0) >= order.get(min_grade, 0)
+
+    def _extract_ml_features(self, data, idx, crossover_type):
+        """Extract ML features at a crossover index for confidence grading."""
+        if idx < 20:
+            return None, None
+
+        window = data.iloc[max(0, idx - 60):idx + 1]
+        latest = window.iloc[-1]
+
+        snapshot_features = {
+            'macd_value': latest['MACD'],
+            'macd_signal': latest['Signal'],
+            'macd_histogram': latest['Histogram'],
+            'macd_above_zero': int(latest['MACD'] > 0),
+            'histogram_slope': (window['Histogram'].iloc[-1] - window['Histogram'].iloc[-5]) / 5 if len(window) >= 5 else 0,
+            'histogram_momentum': window['Histogram'].iloc[-5:].mean() if len(window) >= 5 else 0,
+            'rsi': latest.get('RSI', 50) if not np.isnan(latest.get('RSI', 50)) else 50,
+            'rsi_oversold': int(latest.get('RSI', 50) < 30),
+            'rsi_overbought': int(latest.get('RSI', 50) > 70),
+            'rsi_neutral': int(30 <= latest.get('RSI', 50) <= 70),
+            'rsi_slope': (latest.get('RSI', 50) - window['RSI'].iloc[-5]) / 5 if len(window) >= 5 and 'RSI' in window.columns else 0,
+            'adx': latest.get('ADX', 20) if not np.isnan(latest.get('ADX', 20)) else 20,
+            'plus_di': latest.get('Plus_DI', 20) if not np.isnan(latest.get('Plus_DI', 20)) else 20,
+            'minus_di': latest.get('Minus_DI', 20) if not np.isnan(latest.get('Minus_DI', 20)) else 20,
+            'di_diff': (latest.get('Plus_DI', 20) - latest.get('Minus_DI', 20)) if not np.isnan(latest.get('Plus_DI', 20)) else 0,
+            'adx_strong': int(latest.get('ADX', 20) > 25) if not np.isnan(latest.get('ADX', 20)) else 0,
+            'price': latest['Close'],
+            'distance_from_ema200_pct': ((latest['Close'] - latest['EMA_200']) / latest['EMA_200'] * 100) if latest['EMA_200'] > 0 else 0,
+            'price_above_ema200': int(latest['Close'] > latest['EMA_200']),
+            'returns_1d': ((latest['Close'] - window.iloc[-2]['Close']) / window.iloc[-2]['Close'] * 100) if len(window) >= 2 else 0,
+            'returns_5d': ((latest['Close'] - window.iloc[-6]['Close']) / window.iloc[-6]['Close'] * 100) if len(window) >= 6 else 0,
+            'returns_10d': ((latest['Close'] - window.iloc[-11]['Close']) / window.iloc[-11]['Close'] * 100) if len(window) >= 11 else 0,
+            'returns_20d': ((latest['Close'] - window.iloc[-21]['Close']) / window.iloc[-21]['Close'] * 100) if len(window) >= 21 else 0,
+            'volume_ratio_20d': latest['Volume'] / window['Volume'].mean() if window['Volume'].mean() > 0 else 1,
+            'volume_trend': int(window['Volume'].iloc[-5:].mean() > window['Volume'].iloc[-11:-5].mean()) if len(window) >= 11 else 0,
+            'bb_position': latest.get('BB_PercentB', 0.5) if not np.isnan(latest.get('BB_PercentB', 0.5)) else 0.5,
+            'bb_bandwidth': latest.get('BB_Bandwidth', 0.04) if not np.isnan(latest.get('BB_Bandwidth', 0.04)) else 0.04,
+            'bb_squeeze': int(latest.get('BB_Bandwidth', 0.04) < window['BB_Bandwidth'].quantile(0.2)) if len(window) >= 20 and 'BB_Bandwidth' in window.columns else 0,
+            'volatility_10d': window['Close'].pct_change().iloc[-10:].std() * 100 if len(window) >= 10 else 0,
+            'volatility_20d': window['Close'].pct_change().iloc[-20:].std() * 100 if len(window) >= 20 else 0,
+            'crossover_type': crossover_type,
+        }
+
+        # Sequence features for LSTM (last 30 days)
+        seq_len = min(30, len(window))
+        seq_df = window.iloc[-seq_len:][['Close', 'Volume', 'MACD', 'Signal', 'RSI', 'ADX', 'BB_PercentB', 'EMA_200']].copy()
+        seq_df = seq_df.fillna(method='ffill').fillna(0)
+        seq_norm = seq_df.copy()
+        for col in seq_df.columns:
+            if seq_df[col].std() > 0:
+                seq_norm[col] = (seq_df[col] - seq_df[col].mean()) / seq_df[col].std()
+            else:
+                seq_norm[col] = 0
+        return snapshot_features, seq_norm.values
+
     # ── Core backtest ───────────────────────────────────────────────────
 
     def run(self, ticker, start_date=None, end_date=None, period='5y', 
-            trade_type='both', require_ema200=False):
+            trade_type='both', require_ema200=False,
+            ml_predictor=None, min_ml_grade=None, entry_delay=0):
         """
         Run backtest on a single ticker.
 
@@ -79,6 +167,9 @@ class MACDBacktester:
             period: yfinance period string if start_date not given
             trade_type: 'long', 'short', or 'both'
             require_ema200: If True, only take longs above EMA-200 / shorts below
+            ml_predictor: Optional EnsemblePredictor instance for ML confidence filtering
+            min_ml_grade: Minimum ML grade to enter trade ('D', 'C', 'B', 'A', 'A+')
+            entry_delay: Days to wait after crossover before entering (0 = enter same day)
 
         Returns:
             dict with trades list, summary stats, and equity curve
@@ -126,9 +217,31 @@ class MACDBacktester:
                     i += 1
                     continue
 
+            # ML confidence filter
+            ml_grade = None
+            if ml_predictor is not None and min_ml_grade is not None:
+                try:
+                    crossover_type = 1 if direction == 'LONG' else -1
+                    features, seq = self._extract_ml_features(data, i, crossover_type)
+                    if features is not None and seq is not None:
+                        ml_result = ml_predictor.predict(features, seq)
+                        ml_grade = ml_result['signal_grade']
+                        if not self._grade_meets_minimum(ml_grade, min_ml_grade):
+                            i += 1
+                            continue
+                except Exception:
+                    pass  # Allow trade if ML scoring fails
+
+            # Entry delay
+            actual_entry_idx = i + entry_delay
+            if actual_entry_idx >= len(data):
+                i += 1
+                continue
+
             # ── Open trade ──
-            entry_price = row['Close']
-            entry_date = indices[i]
+            entry_row = data.iloc[actual_entry_idx]
+            entry_price = entry_row['Close']
+            entry_date = indices[actual_entry_idx]
 
             if direction == 'LONG':
                 stop_loss = entry_price * (1 - self.stop_loss_pct)
@@ -142,7 +255,7 @@ class MACDBacktester:
             exit_date = None
             exit_reason = None
 
-            for j in range(i + 1, min(i + 1 + self.max_hold_days, len(data))):
+            for j in range(actual_entry_idx + 1, min(actual_entry_idx + 1 + self.max_hold_days, len(data))):
                 day = data.iloc[j]
 
                 if direction == 'LONG':
@@ -172,7 +285,7 @@ class MACDBacktester:
 
             # If neither SL nor TP hit within max_hold_days, exit at close
             if exit_price is None:
-                last_j = min(i + self.max_hold_days, len(data) - 1)
+                last_j = min(actual_entry_idx + self.max_hold_days, len(data) - 1)
                 exit_price = data.iloc[last_j]['Close']
                 exit_date = indices[last_j]
                 exit_reason = 'Max Hold'
@@ -196,6 +309,8 @@ class MACDBacktester:
                 'hold_days': (exit_date - entry_date).days,
                 'macd_at_entry': round(row['MACD'], 4),
                 'rsi_at_entry': round(row['RSI'], 2) if not np.isnan(row['RSI']) else None,
+                'ml_grade': ml_grade,
+                'entry_delay_days': entry_delay,
             })
 
             # Jump past trade (no overlapping trades)
@@ -341,7 +456,8 @@ class MACDBacktester:
 
     def run_realistic(self, ticker, start_date=None, end_date=None, period='5y',
                       trade_type='both', require_ema200=False,
-                      capture_pct=0.65):
+                      capture_pct=0.65,
+                      ml_predictor=None, min_ml_grade=None, entry_delay=0):
         """
         Realistic trader simulation over a 5-day max hold.
 
@@ -358,6 +474,9 @@ class MACDBacktester:
         Args:
             capture_pct: Fraction of max favorable excursion the trader captures (0.0-1.0).
                          0.65 means the trader captures 65% of the best move.
+            ml_predictor: Optional EnsemblePredictor instance for ML confidence filtering
+            min_ml_grade: Minimum ML grade to enter trade ('D', 'C', 'B', 'A', 'A+')
+            entry_delay: Days to wait after crossover before entering (0 = enter same day)
         """
         stock = yf.Ticker(ticker)
         if start_date:
@@ -400,8 +519,30 @@ class MACDBacktester:
                     i += 1
                     continue
 
-            entry_price = row['Close']
-            entry_date = indices[i]
+            # ML confidence filter
+            ml_grade = None
+            if ml_predictor is not None and min_ml_grade is not None:
+                try:
+                    crossover_type = 1 if direction == 'LONG' else -1
+                    features, seq = self._extract_ml_features(data, i, crossover_type)
+                    if features is not None and seq is not None:
+                        ml_result = ml_predictor.predict(features, seq)
+                        ml_grade = ml_result['signal_grade']
+                        if not self._grade_meets_minimum(ml_grade, min_ml_grade):
+                            i += 1
+                            continue
+                except Exception:
+                    pass  # Allow trade if ML scoring fails
+
+            # Entry delay
+            actual_entry_idx = i + entry_delay
+            if actual_entry_idx >= len(data):
+                i += 1
+                continue
+
+            entry_row = data.iloc[actual_entry_idx]
+            entry_price = entry_row['Close']
+            entry_date = indices[actual_entry_idx]
 
             if direction == 'LONG':
                 stop_loss = entry_price * (1 - self.stop_loss_pct)
@@ -416,9 +557,9 @@ class MACDBacktester:
             exit_reason = None
             best_favorable_price = entry_price  # track MFE
 
-            end_j = min(i + 1 + max_hold, len(data))
+            end_j = min(actual_entry_idx + 1 + max_hold, len(data))
 
-            for j in range(i + 1, end_j):
+            for j in range(actual_entry_idx + 1, end_j):
                 day = data.iloc[j]
 
                 if direction == 'LONG':
@@ -456,7 +597,7 @@ class MACDBacktester:
 
             # ── End of hold period – realistic exit ──
             if exit_price is None:
-                last_j = min(i + max_hold, len(data) - 1)
+                last_j = min(actual_entry_idx + max_hold, len(data) - 1)
                 exit_date = indices[last_j]
 
                 if direction == 'LONG':
@@ -502,6 +643,7 @@ class MACDBacktester:
                 'mfe_pct': round(mfe_pct, 2),
                 'hold_days': (exit_date - entry_date).days,
                 'rsi_at_entry': round(row['RSI'], 2) if not np.isnan(row['RSI']) else None,
+                'ml_grade': ml_grade,
             })
 
             exit_idx = indices.index(exit_date)

@@ -9,8 +9,24 @@ import numpy as np
 from macd_scanner import MACDScanner
 from backtester import MACDBacktester
 from datetime import datetime, timedelta
+import os
 import warnings
 warnings.filterwarnings('ignore')
+
+# Cached ML model loader for backtester filtering
+@st.cache_resource
+def _load_backtester_ml_predictor():
+    """Load the ML ensemble predictor once and cache it."""
+    try:
+        from ensemble_predictor import EnsemblePredictor
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        predictor = EnsemblePredictor(target_period=5)
+        xgb_path = os.path.join(base_dir, 'xgboost_model_5d.pkl')
+        lstm_path = os.path.join(base_dir, 'lstm_model_5d.pth')
+        predictor.load_models(xgb_path, lstm_path)
+        return predictor
+    except Exception:
+        return None
 
 # Page configuration
 st.set_page_config(
@@ -774,10 +790,31 @@ with bt_col4:
 bt_require_ema = st.checkbox("Require EMA-200 confirmation", value=False,
                               help="Only take longs above EMA-200, shorts below")
 
+bt_col5, bt_col6 = st.columns([1, 1])
+with bt_col5:
+    bt_ml_grade = st.selectbox("Min ML Confidence Grade",
+                                options=["No Filter", "D", "C", "B", "A", "A+"],
+                                index=0,
+                                help="Only enter trades with at least this ML confidence grade (A+ is best, F is worst)")
+with bt_col6:
+    bt_entry_delay = st.number_input("Entry Delay (days after signal)",
+                                      min_value=0, max_value=5, value=0, step=1,
+                                      help="Wait N days after crossover before entering (0 = enter on signal day)")
+
 if st.button("📊 Run Backtest", type="primary", use_container_width=True):
     if not bt_ticker:
         st.error("Please enter a ticker symbol.")
     else:
+        # Load ML predictor if needed
+        bt_ml_pred = None
+        bt_ml_min = None
+        if bt_ml_grade != "No Filter":
+            bt_ml_pred = _load_backtester_ml_predictor()
+            bt_ml_min = bt_ml_grade
+            if bt_ml_pred is None:
+                st.warning("⚠️ ML models not available. Running without ML filter.")
+                bt_ml_min = None
+
         with st.spinner(f"Running backtest on {bt_ticker}..."):
             bt = MACDBacktester(
                 stop_loss_pct=bt_sl / 100,
@@ -788,7 +825,10 @@ if st.button("📊 Run Backtest", type="primary", use_container_width=True):
                 bt_ticker,
                 period=bt_period,
                 trade_type=bt_trade_type,
-                require_ema200=bt_require_ema
+                require_ema200=bt_require_ema,
+                ml_predictor=bt_ml_pred,
+                min_ml_grade=bt_ml_min,
+                entry_delay=bt_entry_delay
             )
         
         if 'error' in result:
@@ -973,10 +1013,32 @@ with rt_col4:
 
 rt_require_ema = st.checkbox("Require EMA-200 confirmation", value=False, key="rt_ema")
 
+rt_col5, rt_col6 = st.columns([1, 1])
+with rt_col5:
+    rt_ml_grade = st.selectbox("Min ML Confidence Grade",
+                                options=["No Filter", "D", "C", "B", "A", "A+"],
+                                index=0, key="rt_ml_grade",
+                                help="Only enter trades with at least this ML confidence grade (A+ is best, F is worst)")
+with rt_col6:
+    rt_entry_delay = st.number_input("Entry Delay (days after signal)",
+                                      min_value=0, max_value=5, value=0, step=1,
+                                      key="rt_entry_delay",
+                                      help="Wait N days after crossover before entering (0 = enter on signal day)")
+
 if st.button("🧠 Run Realistic Backtest", type="primary", use_container_width=True):
     if not rt_ticker:
         st.error("Please enter a ticker symbol.")
     else:
+        # Load ML predictor if needed
+        rt_ml_pred = None
+        rt_ml_min = None
+        if rt_ml_grade != "No Filter":
+            rt_ml_pred = _load_backtester_ml_predictor()
+            rt_ml_min = rt_ml_grade
+            if rt_ml_pred is None:
+                st.warning("⚠️ ML models not available. Running without ML filter.")
+                rt_ml_min = None
+
         with st.spinner(f"Running realistic backtest on {rt_ticker}..."):
             bt = MACDBacktester(
                 stop_loss_pct=rt_sl / 100,
@@ -988,7 +1050,10 @@ if st.button("🧠 Run Realistic Backtest", type="primary", use_container_width=
                 period=rt_period,
                 trade_type=rt_trade_type,
                 require_ema200=rt_require_ema,
-                capture_pct=rt_capture / 100
+                capture_pct=rt_capture / 100,
+                ml_predictor=rt_ml_pred,
+                min_ml_grade=rt_ml_min,
+                entry_delay=rt_entry_delay
             )
 
         if 'error' in result:
