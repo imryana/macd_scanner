@@ -12,7 +12,6 @@ from data_preparation import DataPreparation
 from ml_model import MACDXGBoostModel
 from lstm_model import LSTMTrainer
 from ensemble_predictor import EnsemblePredictor
-from exit_model import ExitTimingModel
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -167,26 +166,6 @@ class ModelTrainingPipeline:
         
         return ensemble
     
-    def step5_train_exit_model(self, df):
-        """
-        Step 5: Train exit timing model
-        Predicts optimal holding duration (1-20 days) per signal
-        """
-        print("\n" + "="*70)
-        print("STEP 5: TRAIN EXIT TIMING MODEL")
-        print("="*70)
-        
-        if 'optimal_exit_day' not in df.columns:
-            print("⚠️  optimal_exit_day not in data. Skipping exit model.")
-            return None, None
-        
-        model = ExitTimingModel()
-        metrics = model.train(df)
-        model.plot_diagnostics('exit_model_diagnostics.png')
-        model.save('exit_timing_model.pkl')
-        
-        return model, metrics
-    
     def run_full_pipeline(self, tickers=None, lookback='10y', target_period=5, 
                          optimize_xgboost=False, lstm_epochs=50):
         """
@@ -233,11 +212,6 @@ class ModelTrainingPipeline:
             ensemble = self.step4_create_ensemble(target_period=target_period)
             results['ensemble'] = ensemble
             
-            # Step 5: Train exit timing model (only once, not per period)
-            if not os.path.exists('exit_timing_model.pkl') or target_period == self.target_periods[0]:
-                exit_model, exit_metrics = self.step5_train_exit_model(df)
-                results['exit_metrics'] = exit_metrics
-            
             # Summary
             end_time = datetime.now()
             duration = end_time - start_time
@@ -254,18 +228,11 @@ class ModelTrainingPipeline:
             print(f"\n🧠 LSTM Performance:")
             print(f"   Test Accuracy: {lstm_metrics['accuracy']:.3f}")
             print(f"   Test AUC:      {lstm_metrics['auc']:.3f}")
-            if results.get('exit_metrics'):
-                print(f"\n🎯 Exit Timing Model:")
-                print(f"   Test MAE:  {results['exit_metrics']['test_mae']:.2f} days")
-                print(f"   Test R²:   {results['exit_metrics']['test_r2']:.3f}")
-                print(f"   Bucket Accuracy: {results['exit_metrics']['bucket_accuracy']:.1%}")
             print(f"\n💾 Saved Files:")
             print(f"   ✅ xgboost_model_{target_period}d.pkl")
             print(f"   ✅ lstm_model_{target_period}d.pth")
-            print(f"   ✅ exit_timing_model.pkl")
             print(f"   ✅ xgboost_diagnostics_{target_period}d.png")
             print(f"   ✅ lstm_training_history_{target_period}d.png")
-            print(f"   ✅ exit_model_diagnostics.png")
             print("\n🎯 Next Steps:")
             print("   1. Review diagnostic plots")
             print("   2. Test ensemble predictor: python ensemble_predictor.py")
