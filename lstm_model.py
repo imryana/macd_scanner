@@ -38,21 +38,21 @@ class TradingSequenceDataset(Dataset):
 
 class MACDLSTMModel(nn.Module):
     """
-    LSTM network with attention mechanism for trading signal prediction
-    
-    Architecture:
-    - LSTM layers to capture temporal dependencies
-    - Attention mechanism to focus on relevant timeframes
-    - Fully connected layers for classification
+    Simplified LSTM for trading signal prediction
+
+    Architecture (reduced to prevent overfitting):
+    - Single LSTM layer with higher dropout
+    - Simple last-hidden-state output (no attention — reduces overfitting)
+    - Minimal FC head
     """
-    
-    def __init__(self, input_size=8, hidden_size=128, num_layers=2, dropout=0.3):
+
+    def __init__(self, input_size=8, hidden_size=64, num_layers=1, dropout=0.5):
         super(MACDLSTMModel, self).__init__()
-        
+
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        
-        # LSTM layers
+
+        # Single LSTM layer
         self.lstm = nn.LSTM(
             input_size=input_size,
             hidden_size=hidden_size,
@@ -60,55 +60,32 @@ class MACDLSTMModel(nn.Module):
             batch_first=True,
             dropout=dropout if num_layers > 1 else 0
         )
-        
-        # Attention mechanism
-        self.attention = nn.Sequential(
-            nn.Linear(hidden_size, hidden_size // 2),
-            nn.Tanh(),
-            nn.Linear(hidden_size // 2, 1)
-        )
-        
-        # Fully connected layers (no sigmoid - using BCEWithLogitsLoss)
+
+        self.dropout = nn.Dropout(dropout)
+
+        # Minimal FC head
         self.fc = nn.Sequential(
-            nn.Linear(hidden_size, 64),
+            nn.Linear(hidden_size, 32),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Dropout(dropout * 0.5),
             nn.Linear(32, 1)
         )
-        
-    def apply_attention(self, lstm_output):
-        """
-        Apply attention mechanism to LSTM output
-        Returns weighted sum of all timesteps
-        """
-        # lstm_output shape: (batch, seq_len, hidden_size)
-        attention_weights = self.attention(lstm_output)  # (batch, seq_len, 1)
-        attention_weights = torch.softmax(attention_weights, dim=1)
-        
-        # Weighted sum
-        context = torch.sum(lstm_output * attention_weights, dim=1)  # (batch, hidden_size)
-        return context, attention_weights
-    
+
     def forward(self, x):
         """
         Forward pass
         Args:
             x: (batch, sequence_length, features)
         Returns:
-            predictions: (batch, 1)
+            predictions: (batch,)
         """
-        # LSTM forward
+        # LSTM forward — use last hidden state
         lstm_out, (hidden, cell) = self.lstm(x)
-        
-        # Apply attention
-        context, attention_weights = self.apply_attention(lstm_out)
-        
+        last_hidden = self.dropout(lstm_out[:, -1, :])  # (batch, hidden_size)
+
         # Classification
-        output = self.fc(context)
-        
+        output = self.fc(last_hidden)
+
         return output.squeeze()
 
 
@@ -118,7 +95,7 @@ class LSTMTrainer:
     Handles training, validation, and prediction
     """
     
-    def __init__(self, input_size=8, hidden_size=128, num_layers=2, dropout=0.3, 
+    def __init__(self, input_size=8, hidden_size=64, num_layers=1, dropout=0.5,
                  target_period=5, device=None):
         """
         Args:
@@ -170,41 +147,49 @@ class LSTMTrainer:
     def prepare_sequences(self, sequences_file, labels_df):
         """
         Load and prepare sequence data
-        
+
         Args:
             sequences_file: Path to .npy file with sequences
             labels_df: DataFrame with labels
-            
+
         Returns:
             train_loader, val_loader, test_loader
         """
         print("\n📊 Loading sequence data...")
-        
+
         # Load sequences
         sequences = np.load(sequences_file, allow_pickle=True)
         print(f"   Loaded {len(sequences)} sequences")
-        
+
         # Get labels
         target_col = f'profitable_{self.target_period}d'
         labels = labels_df[target_col].values
-        
+
         # Remove samples with missing labels
         valid_mask = ~pd.isna(labels)
         sequences = sequences[valid_mask]
         labels = labels[valid_mask]
-        
+
+        # Sort by date for time-based split (prevents lookahead bias)
+        if 'date' in labels_df.columns:
+            dates = labels_df['date'].values[valid_mask]
+            sort_idx = np.argsort(dates)
+            sequences = sequences[sort_idx]
+            labels = labels[sort_idx]
+            print(f"   ⏰ Time-sorted for chronological split")
+
         print(f"   Valid samples: {len(sequences)}")
         print(f"   Positive rate: {labels.mean()*100:.1f}%")
-        
+
         # Pad sequences to same length (30 timesteps)
         max_len = 30
         padded_sequences = []
-        
+
         for seq in sequences:
             # Convert to numpy array if it's a list
             if isinstance(seq, list):
                 seq = np.array(seq)
-            
+
             if len(seq) < max_len:
                 # Pad with zeros at the beginning
                 padding = np.zeros((max_len - len(seq), seq.shape[1]))
@@ -213,17 +198,18 @@ class LSTMTrainer:
                 # Take last max_len timesteps
                 seq = seq[-max_len:]
             padded_sequences.append(seq)
-        
+
         sequences = np.array(padded_sequences)
         print(f"   Sequence shape: {sequences.shape}")
-        
-        # Split data
-        X_temp, X_test, y_temp, y_test = train_test_split(
-            sequences, labels, test_size=0.15, random_state=42, stratify=labels
-        )
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_temp, y_temp, test_size=0.176, random_state=42, stratify=y_temp  # 0.176 * 0.85 ≈ 0.15
-        )
+
+        # Time-based split: 70% train, 15% val, 15% test (chronological order)
+        n = len(sequences)
+        train_end = int(n * 0.70)
+        val_end = int(n * 0.85)
+
+        X_train, y_train = sequences[:train_end], labels[:train_end]
+        X_val, y_val = sequences[train_end:val_end], labels[train_end:val_end]
+        X_test, y_test = sequences[val_end:], labels[val_end:]
         
         print(f"\n📈 Data Split:")
         print(f"   Training:   {len(X_train)} samples ({y_train.mean()*100:.1f}% positive)")
@@ -515,9 +501,9 @@ if __name__ == "__main__":
     # Train LSTM
     trainer = LSTMTrainer(
         input_size=8,
-        hidden_size=128,
-        num_layers=2,
-        dropout=0.3,
+        hidden_size=64,
+        num_layers=1,
+        dropout=0.5,
         target_period=5
     )
     

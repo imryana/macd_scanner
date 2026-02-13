@@ -16,12 +16,12 @@ class EnsemblePredictor:
     Ensemble model combining XGBoost and LSTM predictions
     
     Weighting strategy:
-    - XGBoost: Good at snapshot feature patterns (40%)
-    - LSTM: Good at temporal sequence patterns (60%)
+    - XGBoost: Better AUC (0.572-0.595), favored at 70%
+    - LSTM: Weaker AUC (~0.545), overfits, reduced to 30%
     """
-    
-    def __init__(self, xgboost_weight=0.4, lstm_weight=0.6, 
-                 confidence_threshold=0.65, target_period=5):
+
+    def __init__(self, xgboost_weight=0.7, lstm_weight=0.3,
+                 confidence_threshold=0.60, target_period=5):
         """
         Args:
             xgboost_weight: Weight for XGBoost prediction (0-1)
@@ -77,9 +77,9 @@ class EnsemblePredictor:
             
             self.lstm_model = LSTMTrainer(
                 input_size=8,
-                hidden_size=128,
-                num_layers=2,
-                dropout=0.3,
+                hidden_size=64,
+                num_layers=1,
+                dropout=0.5,
                 target_period=self.target_period,
                 device=device
             )
@@ -322,9 +322,9 @@ if __name__ == "__main__":
     
     # Initialize ensemble
     ensemble = EnsemblePredictor(
-        xgboost_weight=0.4,
-        lstm_weight=0.6,
-        confidence_threshold=0.65,
+        xgboost_weight=0.7,
+        lstm_weight=0.3,
+        confidence_threshold=0.60,
         target_period=5
     )
     

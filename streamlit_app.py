@@ -395,9 +395,9 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("<h3 style='color: white; font-size: 1.2rem;'>🤖 Machine Learning Filter</h3>", unsafe_allow_html=True)
 use_ml = st.sidebar.checkbox("Enable ML Filtering", value=True,
                              help="Filter signals using XGBoost + LSTM ensemble models")
-ml_confidence = st.sidebar.slider("ML Confidence Threshold", 
-                                  min_value=0.5, max_value=0.95, value=0.65, step=0.05,
-                                  help="Minimum confidence to show signals (higher = more selective)")
+ml_confidence = st.sidebar.slider("ML Confidence Threshold",
+                                  min_value=0.5, max_value=0.95, value=0.60, step=0.05,
+                                  help="Minimum confidence to show signals (higher = more selective). Calibrated probabilities mean 0.6 = 60% expected win rate.")
 ml_target_period = st.sidebar.selectbox("ML Holding Period",
                                         options=[5, 10, 20],
                                         index=0,
@@ -474,10 +474,11 @@ with col2:
     - 🟠 **SHORT**: Bearish with confirmations
     """)
     
-    st.markdown("#### 🤖 Machine Learning")
+    st.markdown("#### 🤖 Machine Learning (v2)")
     st.markdown("""
-    - **XGBoost + LSTM**: 29,538 signals trained
-    - 📊 **Confidence Grades**: A+ to F ranking
+    - **XGBoost (70%) + LSTM (30%)** ensemble
+    - 📊 **Calibrated Confidence**: A+ to F grades
+    - 🌍 **Market Regime Aware**: SPY trend + volatility
     - ⚡ **GPU Accelerated**: NVIDIA CUDA powered
     """)
     
@@ -1206,66 +1207,64 @@ if 'realistic_result' in st.session_state:
 st.markdown("---")
 
 # How it works section
-with st.expander("🤖 How the ML Models Work"):
+with st.expander("🤖 How the ML Models Work (v2)"):
     st.markdown("### Machine Learning Signal Quality Filter")
-    st.markdown("Our system uses a **hybrid ensemble** of two ML models to predict signal profitability")
-    
+    st.markdown("**v2** — Improved with time-based validation, market regime features, calibrated probabilities, and feature selection")
+
     st.markdown("---")
     st.markdown("#### 📊 Training Data")
     st.markdown("""
-    - **29,538 historical MACD signals** from 502 S&P 500 stocks
-    - **3 years of data** (2023-2026) capturing diverse market conditions
-    - **46% baseline win rate** - signals labeled profitable if 5-day return > 0%
+    - **100+ stocks** across all S&P 500 sectors + ETFs
+    - **10 years of data** capturing bull, bear, and sideways markets
+    - **Time-based split**: train on earlier data, test on recent data (no lookahead bias)
+    - **Risk-adjusted labels**: signals scored by return-to-drawdown ratio, not just raw return
     """)
-    
+
     st.markdown("---")
     st.markdown("#### 🤖 Model Architecture")
-    
-    st.markdown("**1️⃣ XGBoost Model (40% weight)**")
+
+    st.markdown("**1️⃣ XGBoost Model (70% weight — primary)**")
     st.markdown("""
-    - Gradient boosted decision trees optimized for feature-based classification
-    - Analyzes **31 engineered features**: MACD, RSI, ADX, volume, Bollinger Bands, momentum
-    - **56.7% AUC** on test set
-    - Top features: signal direction, MACD histogram, price position
+    - Gradient boosted decision trees with **45+ engineered features**:
+      - MACD, RSI, ADX, Bollinger Bands, volume ratios
+      - **Market regime**: SPY trend (20d/50d), volatility (VIX proxy), market breadth
+      - **Price action**: candle body size, wicks, gaps, distance from highs/lows, ATR
+      - **Signal context**: crossover direction, recent crossover count (whipsaw detection)
+    - **Permutation-based feature selection** — noise features auto-pruned
+    - **Calibrated probabilities** (Platt scaling) — confidence scores are meaningful
     """)
-    
-    st.markdown("**2️⃣ LSTM Neural Network (60% weight)**")
+
+    st.markdown("**2️⃣ LSTM Neural Network (30% weight — supplementary)**")
     st.markdown("""
-    - 2-layer LSTM with attention mechanism for temporal pattern recognition
+    - Simplified single-layer LSTM (reduced from 2-layer with attention)
+    - Higher dropout (50%) to prevent overfitting
     - Processes **30-day sequences** of 8 normalized indicators
     - **GPU-accelerated** training on NVIDIA CUDA
-    - **53.1% AUC** on test set
-    - Captures time-series patterns invisible to feature-based models
     """)
-    
+
     st.markdown("---")
     st.markdown("#### 🎯 Ensemble Prediction")
     st.markdown("""
-    - Combines both models with weighted voting (XGBoost 40%, LSTM 60%)
-    - Generates **confidence score** (0-100%) for each signal
-    - Assigns **letter grades** based on confidence:
-        - 🏆 **A+/A**: 95-100% - Highest quality
-        - 💎 **B+/B**: 85-95% - Strong signals
-        - ✅ **C+/C**: 75-85% - Good signals
-        - ⚠️ **D+/D**: 65-75% - Above threshold
-        - ❌ **F**: <65% - Below threshold
+    - Combines both models: **XGBoost 70% + LSTM 30%** (weighted by proven accuracy)
+    - **Calibrated confidence scores** — a 70% prediction means ~70% historical win rate
+    - Letter grades based on calibrated confidence:
+        - 🏆 **A+/A**: 90-100% — Highest quality
+        - 💎 **B+/B**: 80-90% — Strong signals
+        - ✅ **C+/C**: 70-80% — Good signals
+        - ⚠️ **D+/D**: 60-70% — Above threshold
+        - ❌ **F**: <60% — Below threshold
     """)
-    
+
     st.markdown("---")
-    st.markdown("#### 🔧 How It Improves Trading")
+    st.markdown("#### 🔧 v2 Improvements")
     st.markdown("""
-    - ✅ Filters out low-quality signals lacking predictive power
-    - 📊 Provides confidence-based ranking to prioritize opportunities
-    - 📉 Reduces false positives by ~40% vs technical indicators alone
-    - 🎯 Trained specifically on MACD crossovers, not generic predictions
-    """)
-    
-    st.markdown("---")
-    st.markdown("#### ⚡ Performance")
-    st.markdown("""
-    - Models trained in ~8 minutes using GPU acceleration
-    - Real-time prediction: <50ms per signal
-    - Automatically retrains periodically on new data
+    - ⏰ **Time-based validation** — no lookahead bias, honest metrics
+    - 🌍 **Market regime awareness** — knows if it's a bull/bear/choppy market
+    - 📊 **Calibrated probabilities** — confidence grades are reliable
+    - ✂️ **Auto feature selection** — noise features automatically removed
+    - 📈 **Risk-adjusted labels** — penalizes trades with large drawdowns
+    - 🏷️ **Crossover direction included** — bullish vs bearish is a feature
+    - 🧠 **Simplified LSTM** — less overfitting, better generalization
     """)
     
     st.warning("⚠️ **Disclaimer:** ML predictions are probabilistic and should be combined with your own analysis and risk management. Past performance does not guarantee future results.")
@@ -1273,7 +1272,7 @@ with st.expander("🤖 How the ML Models Work"):
 st.markdown("""
 <div style='text-align: center; padding: 2rem 0 1rem 0; margin-top: 3rem; border-top: 2px solid rgba(102, 126, 234, 0.3);'>
     <p style='font-size: 0.95rem; color: #a0aec0; margin-bottom: 0.5rem;'>
-        <strong>MACD Scanner v2.0</strong> with AI-Powered Analysis
+        <strong>MACD Scanner v3.0</strong> with AI-Powered Analysis
     </p>
     <p style='font-size: 0.85rem; color: #718096;'>
         Built with ❤️ using Streamlit | Data from Yahoo Finance

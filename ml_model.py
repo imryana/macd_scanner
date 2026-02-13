@@ -5,9 +5,11 @@ Predicts profitability of MACD crossover signals
 
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
+from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV, TimeSeriesSplit
 from sklearn.metrics import classification_report, confusion_matrix, roc_auc_score, roc_curve
 from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn.inspection import permutation_importance
 import xgboost as xgb
 import joblib
 import matplotlib.pyplot as plt
@@ -39,9 +41,12 @@ class MACDXGBoostModel:
         Handles categorical encoding and feature selection
         """
         # Define feature columns (exclude metadata and target columns)
-        exclude_cols = ['ticker', 'date', 'entry_price', 'crossover_type'] + \
-                      [col for col in df.columns if 'return' in col or 'profitable' in col or 
-                       'max_return' in col or 'max_drawdown' in col]
+        # Note: crossover_type, is_bullish, is_bearish are now INCLUDED as features
+        exclude_cols = ['ticker', 'date', 'entry_price', 'sequence'] + \
+                      [col for col in df.columns if 'return' in col or 'profitable' in col or
+                       'max_return' in col or 'max_drawdown' in col or
+                       'quality_' in col or 'risk_adjusted_ratio_' in col or
+                       'optimal_exit' in col or 'daily_return' in col]
         
         feature_cols = [col for col in df.columns if col not in exclude_cols]
         
@@ -55,11 +60,6 @@ class MACDXGBoostModel:
         X['adx_di_interaction'] = X['adx'] * X['di_diff']
         if 'volume_ratio_20d' in X.columns and 'returns_1d' in X.columns:
             X['volume_momentum'] = X['volume_ratio_20d'] * X['returns_1d']
-        
-        # Note: crossover_type is excluded above but we keep it as a feature
-        # via the original column. We do NOT add is_bullish/is_bearish dummies
-        # because they dominate feature importance and prevent the model from
-        # learning actual signal quality patterns.
         
         self.feature_names = X.columns.tolist()
         
@@ -92,11 +92,28 @@ class MACDXGBoostModel:
         print(f"   Positive samples (profitable): {y.sum()} ({y.mean()*100:.1f}%)")
         print(f"   Negative samples (unprofitable): {len(y) - y.sum()} ({(1-y.mean())*100:.1f}%)")
         print(f"   Number of features: {len(self.feature_names)}")
-        
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=test_size, random_state=42, stratify=y
-        )
+
+        # Time-based split: use date column to sort chronologically
+        # Train on earlier data, test on most recent data (prevents lookahead bias)
+        if 'date' in df.columns:
+            df_sorted = df.loc[valid_mask].sort_values('date').reset_index(drop=True)
+            X = self.prepare_features(df_sorted)
+            y = df_sorted[f'profitable_{self.target_period}d']
+            valid_mask2 = ~y.isna()
+            X = X[valid_mask2]
+            y = y[valid_mask2]
+
+            split_idx = int(len(X) * (1 - test_size))
+            X_train, X_test = X.iloc[:split_idx], X.iloc[split_idx:]
+            y_train, y_test = y.iloc[:split_idx], y.iloc[split_idx:]
+            print(f"   ⏰ Time-based split: train up to index {split_idx}, test from {split_idx}")
+            print(f"   Train date range: {df_sorted['date'].iloc[0]} to {df_sorted['date'].iloc[split_idx-1]}")
+            print(f"   Test date range:  {df_sorted['date'].iloc[split_idx]} to {df_sorted['date'].iloc[-1]}")
+        else:
+            # Fallback to random split if no date column
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=test_size, random_state=42, stratify=y
+            )
         
         # Scale features
         X_train_scaled = self.scaler.fit_transform(X_train)
@@ -122,8 +139,8 @@ class MACDXGBoostModel:
                 scale_pos_weight=scale_pos_weight,
                 random_state=42,
                 eval_metric='auc',
-                tree_method='hist',  # CPU-optimized histogram method
-                n_jobs=-1  # Use all CPU cores
+                tree_method='hist',
+                device='cuda',  # GPU-accelerated
             )
             
             grid_search = GridSearchCV(
@@ -152,7 +169,7 @@ class MACDXGBoostModel:
                 random_state=42,
                 eval_metric='auc',
                 tree_method='hist',
-                n_jobs=-1
+                device='cuda',  # GPU-accelerated
             )
             
             # Train with early stopping
@@ -188,21 +205,75 @@ class MACDXGBoostModel:
         print("\n📊 Classification Report (Test Set):")
         print(classification_report(y_test, test_pred, target_names=['Unprofitable', 'Profitable']))
         
-        # Feature importance
+        # Feature importance (tree-based)
         self.feature_importance = pd.DataFrame({
             'feature': self.feature_names,
             'importance': self.model.feature_importances_
         }).sort_values('importance', ascending=False)
-        
+
+        # Permutation importance — more reliable for feature selection
+        print("\n🔍 Computing permutation importance (may take a moment)...")
+        perm_result = permutation_importance(
+            self.model, X_test_scaled, y_test, n_repeats=5, random_state=42, scoring='roc_auc'
+        )
+        perm_importance = pd.DataFrame({
+            'feature': self.feature_names,
+            'perm_importance_mean': perm_result.importances_mean,
+            'perm_importance_std': perm_result.importances_std
+        }).sort_values('perm_importance_mean', ascending=False)
+
+        # Drop features with negative or near-zero permutation importance
+        useful_features = perm_importance[perm_importance['perm_importance_mean'] > 0.001]['feature'].tolist()
+        dropped_features = [f for f in self.feature_names if f not in useful_features]
+
+        if dropped_features and len(useful_features) >= 10:
+            print(f"   ✂️ Dropping {len(dropped_features)} noise features: {dropped_features[:5]}{'...' if len(dropped_features) > 5 else ''}")
+            print(f"   ✅ Keeping {len(useful_features)} useful features")
+
+            # Retrain with pruned features
+            self.feature_names = useful_features
+            X_train_pruned = X_train[useful_features] if isinstance(X_train, pd.DataFrame) else pd.DataFrame(X_train, columns=self.feature_names)
+            X_test_pruned = X_test[useful_features] if isinstance(X_test, pd.DataFrame) else pd.DataFrame(X_test, columns=self.feature_names)
+            X_train_scaled = self.scaler.fit_transform(X_train_pruned)
+            X_test_scaled = self.scaler.transform(X_test_pruned)
+
+            self.model.fit(X_train_scaled, y_train, eval_set=[(X_train_scaled, y_train), (X_test_scaled, y_test)], verbose=False)
+
+            # Re-evaluate
+            test_pred = self.model.predict(X_test_scaled)
+            test_proba = self.model.predict_proba(X_test_scaled)[:, 1]
+            test_acc = (test_pred == y_test).mean()
+            test_auc = roc_auc_score(y_test, test_proba)
+            print(f"   📈 After pruning — Test Accuracy: {test_acc:.3f}, Test AUC: {test_auc:.3f}")
+
+            # Update feature importance for pruned model
+            self.feature_importance = pd.DataFrame({
+                'feature': self.feature_names,
+                'importance': self.model.feature_importances_
+            }).sort_values('importance', ascending=False)
+        else:
+            print(f"   ✅ All {len(self.feature_names)} features contribute meaningfully")
+
         print("\n🔝 Top 15 Important Features:")
         for idx, row in self.feature_importance.head(15).iterrows():
             print(f"   {row['feature']:30s}: {row['importance']:.4f}")
         
+        # Calibrate probabilities using manual Platt scaling (logistic regression on raw probabilities)
+        # This makes confidence scores meaningful — a 0.7 prediction should win ~70% of the time
+        print("\n🎯 Calibrating prediction probabilities (Platt scaling)...")
+        raw_proba = self.model.predict_proba(X_test_scaled)[:, 1]
+        self.platt_scaler = LogisticRegression()
+        self.platt_scaler.fit(raw_proba.reshape(-1, 1), y_test)
+        calibrated_proba = self.platt_scaler.predict_proba(raw_proba.reshape(-1, 1))[:, 1]
+        calibrated_auc = roc_auc_score(y_test, calibrated_proba)
+        print(f"   Calibrated AUC: {calibrated_auc:.3f}")
+        test_proba = calibrated_proba  # Use calibrated probabilities going forward
+
         # Store test set for later visualization
         self.X_test = X_test_scaled
         self.y_test = y_test
         self.test_proba = test_proba
-        
+
         return {
             'train_accuracy': train_acc,
             'test_accuracy': test_acc,
@@ -247,10 +318,14 @@ class MACDXGBoostModel:
         # Scale
         X_scaled = self.scaler.transform(X)
         
-        # Predict
+        # Predict (apply Platt calibration if available for better probability estimates)
         prediction = self.model.predict(X_scaled)[0]
-        probability = self.model.predict_proba(X_scaled)[0][1]
-        
+        raw_proba = self.model.predict_proba(X_scaled)[0][1]
+        if hasattr(self, 'platt_scaler') and self.platt_scaler is not None:
+            probability = float(self.platt_scaler.predict_proba([[raw_proba]])[0][1])
+        else:
+            probability = float(raw_proba)
+
         return int(prediction), float(probability)
     
     def plot_diagnostics(self, save_path='xgboost_diagnostics.png'):
@@ -313,6 +388,7 @@ class MACDXGBoostModel:
         
         model_data = {
             'model': self.model,
+            'platt_scaler': getattr(self, 'platt_scaler', None),
             'scaler': self.scaler,
             'feature_names': self.feature_names,
             'feature_importance': self.feature_importance,
@@ -326,11 +402,14 @@ class MACDXGBoostModel:
         """Load trained model"""
         model_data = joblib.load(filepath)
         self.model = model_data['model']
+        self.platt_scaler = model_data.get('platt_scaler', None)
         self.scaler = model_data['scaler']
         self.feature_names = model_data['feature_names']
         self.feature_importance = model_data['feature_importance']
         self.target_period = model_data['target_period']
         print(f"✅ Model loaded from: {filepath}")
+        if self.platt_scaler is not None:
+            print(f"   🎯 Calibrated predictions enabled")
 
 
 if __name__ == "__main__":

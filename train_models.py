@@ -45,15 +45,35 @@ class ModelTrainingPipeline:
             self.data_collected = True
             return pd.read_csv('training_data.csv')
         
-        # Default ticker list (30 liquid stocks for faster training)
+        # Default: expanded ticker list (100 liquid stocks across sectors)
         if tickers is None:
             tickers = [
-                'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'JPM', 'V', 'MA',
-                'WMT', 'PG', 'JNJ', 'UNH', 'HD', 'BAC', 'XOM', 'CVX', 'ABBV', 'PFE',
-                'KO', 'PEP', 'COST', 'AVGO', 'CSCO', 'ADBE', 'NFLX', 'CRM', 'INTC', 'AMD'
+                # Tech
+                'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA', 'TSLA', 'META', 'AVGO', 'CSCO', 'ADBE',
+                'NFLX', 'CRM', 'INTC', 'AMD', 'ORCL', 'QCOM', 'TXN', 'NOW', 'AMAT', 'MU',
+                # Finance
+                'JPM', 'V', 'MA', 'BAC', 'WFC', 'GS', 'MS', 'BLK', 'AXP', 'C',
+                # Healthcare
+                'JNJ', 'UNH', 'ABBV', 'PFE', 'LLY', 'MRK', 'TMO', 'ABT', 'BMY', 'AMGN',
+                # Consumer
+                'WMT', 'PG', 'KO', 'PEP', 'COST', 'HD', 'MCD', 'NKE', 'SBUX', 'TGT',
+                # Industrial
+                'CAT', 'HON', 'UPS', 'RTX', 'BA', 'GE', 'DE', 'LMT', 'MMM', 'EMR',
+                # Energy
+                'XOM', 'CVX', 'COP', 'SLB', 'EOG', 'MPC', 'PSX', 'VLO', 'OXY', 'HAL',
+                # Communication
+                'DIS', 'CMCSA', 'T', 'VZ', 'TMUS', 'CHTR', 'NFLX', 'EA', 'ATVI', 'TTWO',
+                # Materials / Real Estate / Utilities
+                'LIN', 'APD', 'SHW', 'FCX', 'NEM', 'AMT', 'PLD', 'SPG', 'NEE', 'DUK',
+                # ETFs for diversity
+                'SPY', 'QQQ', 'IWM', 'XLF', 'XLE', 'XLK', 'XLV', 'XLI', 'XLP', 'XLU',
+                # Additional large caps
+                'BRK-B', 'TSM', 'ASML', 'SAP', 'SHOP', 'SQ', 'PYPL', 'UBER', 'ABNB', 'DASH'
             ]
-            print(f"\n📊 Using default ticker set: {len(tickers)} stocks")
-            print("💡 For full S&P 500, modify 'tickers' parameter")
+            # Deduplicate
+            tickers = list(dict.fromkeys(tickers))
+            print(f"\n📊 Using expanded ticker set: {len(tickers)} stocks (multi-sector)")
+            print("💡 For full S&P 500, use option 2 in interactive mode")
         
         # Collect data
         prep = DataPreparation(holding_periods=self.target_periods)
@@ -114,9 +134,9 @@ class ModelTrainingPipeline:
         # Initialize trainer
         trainer = LSTMTrainer(
             input_size=8,
-            hidden_size=128,
-            num_layers=2,
-            dropout=0.3,
+            hidden_size=64,
+            num_layers=1,
+            dropout=0.5,
             target_period=target_period
         )
         
@@ -150,8 +170,8 @@ class ModelTrainingPipeline:
         
         # Initialize ensemble
         ensemble = EnsemblePredictor(
-            xgboost_weight=0.4,
-            lstm_weight=0.6,
+            xgboost_weight=0.7,
+            lstm_weight=0.3,
             confidence_threshold=0.65,
             target_period=target_period
         )
@@ -262,7 +282,10 @@ def quick_start():
     
     Training Options:
     ─────────────────────────────────────────────────────────────────
-    [1] Quick Test (30 stocks, ~15-20 min total)
+    [0] Smoke Test (10 stocks, ~5 min total)
+        → Verify code works end-to-end before scaling up
+    
+    [1] Quick Test (100 stocks, ~30-45 min total)
         → Good for testing, learning the system
     
     [2] Full Training (All S&P 500, ~3-4 hours total)
@@ -275,15 +298,30 @@ def quick_start():
     ─────────────────────────────────────────────────────────────────
     """)
     
-    choice = input("Choose option (1-4): ").strip()
+    choice = input("Choose option (0-4): ").strip()
     
     pipeline = ModelTrainingPipeline(target_periods=[5, 10, 20])
     
-    if choice == '1':
-        print("\n🚀 Quick Test Mode Selected")
-        print("   Using 30 stocks, 10-year history")
+    if choice == '0':
+        print("\n🧪 Smoke Test Mode Selected")
+        print("   Using 10 stocks, 3-year history")
+        test_tickers = [
+            'AAPL', 'MSFT', 'GOOGL', 'AMZN', 'NVDA',
+            'JPM', 'JNJ', 'XOM', 'WMT', 'PG'
+        ]
         results = pipeline.run_full_pipeline(
-            tickers=None,  # Default 30 stocks
+            tickers=test_tickers,
+            lookback='3y',
+            target_period=5,
+            optimize_xgboost=False,
+            lstm_epochs=20
+        )
+    
+    elif choice == '1':
+        print("\n🚀 Quick Test Mode Selected")
+        print("   Using 100 stocks, 10-year history")
+        results = pipeline.run_full_pipeline(
+            tickers=None,  # Default 100 stocks (multi-sector)
             lookback='10y',
             target_period=5,
             optimize_xgboost=False,

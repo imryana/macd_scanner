@@ -68,8 +68,8 @@ class MACDScanner:
                 return
             
             self.ml_ensemble = EnsemblePredictor(
-                xgboost_weight=0.4,
-                lstm_weight=0.6,
+                xgboost_weight=0.7,
+                lstm_weight=0.3,
                 confidence_threshold=self.ml_confidence_threshold,
                 target_period=self.ml_target_period
             )

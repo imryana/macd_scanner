@@ -18,7 +18,7 @@ class DataPreparation:
     Prepare training data by backtesting historical MACD signals
     Labels each signal with future returns (5, 10, 20 days)
     """
-    
+
     def __init__(self, holding_periods=[5, 10, 20]):
         self.holding_periods = holding_periods
         self.scanner = MACDScanner(
@@ -27,7 +27,39 @@ class DataPreparation:
             use_bollinger=True,
             use_ema200=True
         )
+        self._spy_data = None  # Cached SPY data for market regime features
+
+    def _load_spy_data(self, lookback_period='10y'):
+        """Load SPY data once for market regime features"""
+        if self._spy_data is None:
+            try:
+                spy = yf.Ticker('SPY')
+                self._spy_data = spy.history(period=lookback_period)
+                # Pre-calculate SPY indicators
+                self._spy_data['SPY_Return_20d'] = self._spy_data['Close'].pct_change(20) * 100
+                self._spy_data['SPY_Return_50d'] = self._spy_data['Close'].pct_change(50) * 100
+                self._spy_data['SPY_Volatility_20d'] = self._spy_data['Close'].pct_change().rolling(20).std() * 100 * np.sqrt(252)
+                self._spy_data['SPY_SMA_50'] = self._spy_data['Close'].rolling(50).mean()
+                self._spy_data['SPY_Above_SMA50'] = (self._spy_data['Close'] > self._spy_data['SPY_SMA_50']).astype(int)
+            except Exception as e:
+                print(f"⚠️  Could not load SPY data for regime features: {e}")
+                self._spy_data = pd.DataFrame()
+        return self._spy_data
     
+    def _calculate_atr(self, window, period=14):
+        """Calculate Average True Range from a data window"""
+        if len(window) < period + 1:
+            return 0
+        high = window['High'].values
+        low = window['Low'].values
+        close = window['Close'].values
+        tr = np.maximum(high[1:] - low[1:],
+                       np.maximum(abs(high[1:] - close[:-1]),
+                                  abs(low[1:] - close[:-1])))
+        if len(tr) < period:
+            return tr.mean() if len(tr) > 0 else 0
+        return tr[-period:].mean()
+
     def extract_features_at_point(self, data, idx, crossover_type):
         """
         Extract ML features at a specific point in time
@@ -115,7 +147,54 @@ class DataPreparation:
             
             # Crossover context
             'crossover_type': crossover_type,  # 1 = bullish, -1 = bearish
+            'is_bullish': int(crossover_type == 1),
+            'is_bearish': int(crossover_type == -1),
+
+            # Price action features
+            'high_low_range_pct': ((latest['High'] - latest['Low']) / latest['Close'] * 100) if latest['Close'] > 0 else 0,
+            'body_size_pct': abs(latest['Close'] - latest['Open']) / latest['Close'] * 100 if latest['Close'] > 0 else 0,
+            'upper_wick_pct': ((latest['High'] - max(latest['Close'], latest['Open'])) / latest['Close'] * 100) if latest['Close'] > 0 else 0,
+            'lower_wick_pct': ((min(latest['Close'], latest['Open']) - latest['Low']) / latest['Close'] * 100) if latest['Close'] > 0 else 0,
+            'dist_from_20d_high_pct': ((latest['Close'] - window['High'].max()) / window['High'].max() * 100) if len(window) >= 20 and window['High'].max() > 0 else 0,
+            'dist_from_20d_low_pct': ((latest['Close'] - window['Low'].min()) / window['Low'].min() * 100) if len(window) >= 20 and window['Low'].min() > 0 else 0,
+            'avg_body_size_5d': (window['Close'].iloc[-5:] - window['Open'].iloc[-5:]).abs().mean() / latest['Close'] * 100 if len(window) >= 5 and latest['Close'] > 0 else 0,
+            'gap_pct': ((latest['Open'] - window.iloc[-2]['Close']) / window.iloc[-2]['Close'] * 100) if len(window) >= 2 and window.iloc[-2]['Close'] > 0 else 0,
+
+            # ATR (Average True Range) - normalized
+            'atr_14': self._calculate_atr(window, 14) / latest['Close'] * 100 if latest['Close'] > 0 else 0,
+
+            # Recent crossover count (whipsaw indicator)
+            'crossover_count_20d': int(window.get('Crossover', pd.Series(dtype=float)).abs().sum()) if 'Crossover' in window.columns else 0,
         }
+
+        # Market regime features from SPY
+        spy_data = self._load_spy_data()
+        current_date = data.index[idx]
+        if len(spy_data) > 0 and hasattr(current_date, 'date'):
+            # Find matching or nearest prior SPY date
+            try:
+                spy_date_idx = spy_data.index.get_indexer([current_date], method='ffill')[0]
+                if spy_date_idx >= 0:
+                    spy_row = spy_data.iloc[spy_date_idx]
+                    snapshot_features['spy_return_20d'] = spy_row.get('SPY_Return_20d', 0) or 0
+                    snapshot_features['spy_return_50d'] = spy_row.get('SPY_Return_50d', 0) or 0
+                    snapshot_features['spy_volatility_20d'] = spy_row.get('SPY_Volatility_20d', 0) or 0
+                    snapshot_features['spy_above_sma50'] = int(spy_row.get('SPY_Above_SMA50', 0) or 0)
+                else:
+                    snapshot_features['spy_return_20d'] = 0
+                    snapshot_features['spy_return_50d'] = 0
+                    snapshot_features['spy_volatility_20d'] = 0
+                    snapshot_features['spy_above_sma50'] = 0
+            except Exception:
+                snapshot_features['spy_return_20d'] = 0
+                snapshot_features['spy_return_50d'] = 0
+                snapshot_features['spy_volatility_20d'] = 0
+                snapshot_features['spy_above_sma50'] = 0
+        else:
+            snapshot_features['spy_return_20d'] = 0
+            snapshot_features['spy_return_50d'] = 0
+            snapshot_features['spy_volatility_20d'] = 0
+            snapshot_features['spy_above_sma50'] = 0
         
         # Sequence features for LSTM (last 30 days of key indicators)
         sequence_length = min(30, len(window))
@@ -213,9 +292,18 @@ class DataPreparation:
             
             # Label as profitable if return > 0.5% (accounting for transaction costs)
             profitable = 1 if return_pct > 0.5 else 0
-            
+
+            # Risk-adjusted quality score: reward-to-risk ratio
+            # Penalizes trades with large drawdowns even if they ended profitably
+            abs_drawdown = abs(max_drawdown) if max_drawdown < 0 else 0.1  # floor to avoid div/0
+            risk_adjusted_ratio = max_return / abs_drawdown if abs_drawdown > 0.1 else max_return / 0.1
+            # High quality = positive return with small drawdown (ratio > 2)
+            quality_label = 1 if (return_pct > 0.5 and risk_adjusted_ratio > 1.5) else 0
+
             outcomes[f'return_{period}d'] = round(return_pct, 2)
             outcomes[f'profitable_{period}d'] = profitable
+            outcomes[f'quality_{period}d'] = quality_label
+            outcomes[f'risk_adjusted_ratio_{period}d'] = round(risk_adjusted_ratio, 2)
             outcomes[f'max_return_{period}d'] = round(max_return, 2)
             outcomes[f'max_drawdown_{period}d'] = round(max_drawdown, 2)
         
